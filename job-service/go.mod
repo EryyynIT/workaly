@@ -1,4 +1,4 @@
-module github.com/Dexter2038/workaly/job-service
+module github.com/EryyynIT/workaly/job-service
 
 go 1.24.5
 

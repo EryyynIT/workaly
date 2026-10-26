@@ -1,4 +1,4 @@
-module github.com/Dexter2038/workaly/notifications-service
+module github.com/EryyynIT/workaly/notifications-service
 
 go 1.24.5
 

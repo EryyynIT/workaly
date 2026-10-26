@@ -1,4 +1,4 @@
-module github.com/Dexter2038/workaly/chat-service
+module github.com/EryyynIT/workaly/chat-service
 
 go 1.24.5
 

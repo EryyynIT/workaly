@@ -1,4 +1,4 @@
-module github.com/Dexter2038/workaly/freelance-service
+module github.com/EryyynIT/workaly/freelance-service
 
 go 1.24.5
 
