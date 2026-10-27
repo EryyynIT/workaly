@@ -31,6 +31,36 @@ services:
       retries: 30
     restart: unless-stopped
 
+  job-db:
+    image: docker.io/library/postgres:17
+    environment:
+      POSTGRES_USER: workaly_job
+      POSTGRES_PASSWORD: local-development-only
+      POSTGRES_DB: workaly_job
+    volumes:
+      - job-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workaly_job -d workaly_job"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
+
+  task-db:
+    image: docker.io/library/postgres:17
+    environment:
+      POSTGRES_USER: workaly_task
+      POSTGRES_PASSWORD: local-development-only
+      POSTGRES_DB: workaly_task
+    volumes:
+      - task-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workaly_task -d workaly_task"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
+
   user-service:
     image: localhost/workaly-user:s0
     build:
@@ -72,6 +102,34 @@ services:
       retries: 30
     restart: unless-stopped
 
+  job-service:
+    image: localhost/workaly-job:s2
+    build:
+      context: .
+      dockerfile: job-service/Dockerfile
+    environment:
+      DATABASE_URL: postgres://workaly_job:local-development-only@job-db:5432/workaly_job?options=-c%20statement_timeout%3D3000
+      GRPC_ADDR: 0.0.0.0:50052
+    depends_on:
+      job-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  task-service:
+    image: localhost/workaly-task:s2
+    build:
+      context: .
+      dockerfile: task-service/Dockerfile
+    environment:
+      DATABASE_URL: postgres://workaly_task:local-development-only@task-db:5432/workaly_task?options=-c%20statement_timeout%3D3000
+      GRPC_ADDR: 0.0.0.0:50053
+    depends_on:
+      task-db:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   user-data:
   auth-data:
+  job-data:
+  task-data:
