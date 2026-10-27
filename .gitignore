@@ -1,2 +1,7 @@
 # Rust-specific files
 target/
+.env
+.env.*
+!.env.example
+.tools/
+__pycache__/

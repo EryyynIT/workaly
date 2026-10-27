@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  auth:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache-dependency-path: auth-service/go.sum
+      - run: test -z "$(gofmt -l auth-service)"
+      - run: go test -race ./...
+        working-directory: auth-service
+      - run: go vet ./...
+        working-directory: auth-service
+
+  user:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          components: rustfmt, clippy
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - run: cargo fmt --manifest-path user-service/Cargo.toml -- --check
+      - run: cargo test --locked --manifest-path user-service/Cargo.toml
+      - run: cargo clippy --locked --manifest-path user-service/Cargo.toml --all-targets -- -D warnings
+
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache-dependency-path: auth-service/go.sum
+      - run: bash scripts/generate-proto.sh
+      - run: git diff --exit-code -- auth-service/pb
+      - name: Reject untracked generated files
+        run: test -z "$(git ls-files --others --exclude-standard auth-service/pb)"
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start local stack
+        env:
+          COOKIE_SECURE: 'false'
+        run: |
+          export JWT_SECRET="$(openssl rand -hex 32)"
+          docker compose up --build --wait --wait-timeout 120
+      - run: python3 scripts/smoke.py
+      - name: Dependency outage and recovery
+        env:
+          JWT_SECRET: ci-compose-only-not-a-deployment-key
+        run: |
+          docker compose stop auth-db
+          python3 scripts/smoke.py --expect-unavailable
+          docker compose start auth-db
+          python3 scripts/smoke.py
+      - name: Logs
+        if: failure()
+        run: docker compose logs
+        env:
+          JWT_SECRET: ci-logs-only-not-a-deployment-key-000
+      - name: Stop stack
+        if: always()
+        run: docker compose down
+        env:
+          JWT_SECRET: ci-cleanup-only-not-a-deployment-key
