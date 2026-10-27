@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package user;
+
+option go_package = "github.com/EryyynIT/workaly/auth-service/pb/userpb";
+
+// Internal profile API. Credentials, sessions and recovery belong to Auth.
+// user_id is a stable UUID assigned by Auth at registration; User trusts it
+// only from the authenticated internal channel, never from client input.
+service UserService {
+  // Creates a profile for a freshly registered account. Idempotent by user_id:
+  // Auth retries this call when the registration outcome was unknown.
+  rpc CreateProfile(CreateProfileRequest) returns (CreateProfileResponse);
+  // Resolves a user_id to the public display name. Internal use only.
+  rpc GetProfile(GetProfileRequest) returns (GetProfileResponse);
+}
+
+message CreateProfileRequest {
+  string user_id = 1;
+  string name = 2;
+  string username = 3;
+}
+
+message CreateProfileResponse {
+  enum Status {
+    SUCCESS = 0;
+  }
+  Status status = 1;
+}
+
+message GetProfileRequest {
+  string user_id = 1;
+}
+
+message GetProfileResponse {
+  enum Status {
+    SUCCESS = 0;
+  }
+  Status status = 1;
+  string name = 2;
+  string username = 3;
+}
