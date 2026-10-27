@@ -87,6 +87,7 @@ func (app *application) router() *gin.Engine {
 	router.POST("/verify-email", app.jsonRequest, app.verifyEmail)
 	router.GET("/sessions", app.listSessions)
 	router.POST("/logout-all", app.jsonRequest, app.logoutAll)
+	router.GET("/users/:user_id", app.publicProfile)
 	return router
 }
 
@@ -583,6 +584,41 @@ func (app *application) logoutAll(c *gin.Context) {
 	}
 	c.SetCookie("token", "", -1, "/", "", app.cfg.CookieSecure, true)
 	c.JSON(http.StatusOK, gin.H{"message": "all sessions revoked"})
+}
+
+// publicProfile serves the public view of a profile: name and username only.
+// Any client may read it without a session; user_id in the path is the address
+// of public data, not an identity claim, so nothing is authorized by it.
+// Unlike the auth flows, a missing profile is a normal 404, not a credentials
+// error — that is why this endpoint keeps its own RPC error mapping.
+func (app *application) publicProfile(c *gin.Context) {
+	if !app.limiter.Allow("profile:"+c.ClientIP(), 60, time.Minute) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many attempts"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), requestTimeout)
+	defer cancel()
+
+	userID := c.Param("user_id")
+	profile, err := app.users.GetPublicProfile(ctx, &pb.GetPublicProfileRequest{UserId: userID})
+	if err != nil {
+		switch status.Code(err) {
+		case codes.InvalidArgument:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+		case codes.NotFound:
+			c.JSON(http.StatusNotFound, gin.H{"error": "profile not found"})
+		case codes.Unavailable:
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "account service unavailable"})
+		case codes.DeadlineExceeded:
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "operation timed out; result may be unknown"})
+		default:
+			// Only the code is logged: upstream errors can contain database details.
+			slog.Warn("profile request failed", "grpc_code", status.Code(err).String())
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal service error"})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"user_id": userID, "name": profile.Name, "username": profile.Username})
 }
 
 // requireAuth validates the access token cookie and returns the account UUID.

@@ -19,8 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	UserService_CreateProfile_FullMethodName = "/user.UserService/CreateProfile"
-	UserService_GetProfile_FullMethodName    = "/user.UserService/GetProfile"
+	UserService_CreateProfile_FullMethodName    = "/user.UserService/CreateProfile"
+	UserService_GetPublicProfile_FullMethodName = "/user.UserService/GetPublicProfile"
 )
 
 // UserServiceClient is the client API for UserService service.
@@ -34,8 +34,11 @@ type UserServiceClient interface {
 	// Creates a profile for a freshly registered account. Idempotent by user_id:
 	// Auth retries this call when the registration outcome was unknown.
 	CreateProfile(ctx context.Context, in *CreateProfileRequest, opts ...grpc.CallOption) (*CreateProfileResponse, error)
-	// Resolves a user_id to the public display name. Internal use only.
-	GetProfile(ctx context.Context, in *GetProfileRequest, opts ...grpc.CallOption) (*GetProfileResponse, error)
+	// Public profile view by user_id: display name and username, nothing else.
+	// Contains no credentials or contact data, so any caller may read it.
+	// Here user_id is the address of public data, not a proof of identity:
+	// no authorization decision may depend on it.
+	GetPublicProfile(ctx context.Context, in *GetPublicProfileRequest, opts ...grpc.CallOption) (*GetPublicProfileResponse, error)
 }
 
 type userServiceClient struct {
@@ -56,10 +59,10 @@ func (c *userServiceClient) CreateProfile(ctx context.Context, in *CreateProfile
 	return out, nil
 }
 
-func (c *userServiceClient) GetProfile(ctx context.Context, in *GetProfileRequest, opts ...grpc.CallOption) (*GetProfileResponse, error) {
+func (c *userServiceClient) GetPublicProfile(ctx context.Context, in *GetPublicProfileRequest, opts ...grpc.CallOption) (*GetPublicProfileResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetProfileResponse)
-	err := c.cc.Invoke(ctx, UserService_GetProfile_FullMethodName, in, out, cOpts...)
+	out := new(GetPublicProfileResponse)
+	err := c.cc.Invoke(ctx, UserService_GetPublicProfile_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -77,8 +80,11 @@ type UserServiceServer interface {
 	// Creates a profile for a freshly registered account. Idempotent by user_id:
 	// Auth retries this call when the registration outcome was unknown.
 	CreateProfile(context.Context, *CreateProfileRequest) (*CreateProfileResponse, error)
-	// Resolves a user_id to the public display name. Internal use only.
-	GetProfile(context.Context, *GetProfileRequest) (*GetProfileResponse, error)
+	// Public profile view by user_id: display name and username, nothing else.
+	// Contains no credentials or contact data, so any caller may read it.
+	// Here user_id is the address of public data, not a proof of identity:
+	// no authorization decision may depend on it.
+	GetPublicProfile(context.Context, *GetPublicProfileRequest) (*GetPublicProfileResponse, error)
 	mustEmbedUnimplementedUserServiceServer()
 }
 
@@ -92,8 +98,8 @@ type UnimplementedUserServiceServer struct{}
 func (UnimplementedUserServiceServer) CreateProfile(context.Context, *CreateProfileRequest) (*CreateProfileResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateProfile not implemented")
 }
-func (UnimplementedUserServiceServer) GetProfile(context.Context, *GetProfileRequest) (*GetProfileResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetProfile not implemented")
+func (UnimplementedUserServiceServer) GetPublicProfile(context.Context, *GetPublicProfileRequest) (*GetPublicProfileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetPublicProfile not implemented")
 }
 func (UnimplementedUserServiceServer) mustEmbedUnimplementedUserServiceServer() {}
 func (UnimplementedUserServiceServer) testEmbeddedByValue()                     {}
@@ -134,20 +140,20 @@ func _UserService_CreateProfile_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
-func _UserService_GetProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetProfileRequest)
+func _UserService_GetPublicProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPublicProfileRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(UserServiceServer).GetProfile(ctx, in)
+		return srv.(UserServiceServer).GetPublicProfile(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: UserService_GetProfile_FullMethodName,
+		FullMethod: UserService_GetPublicProfile_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(UserServiceServer).GetProfile(ctx, req.(*GetProfileRequest))
+		return srv.(UserServiceServer).GetPublicProfile(ctx, req.(*GetPublicProfileRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -164,8 +170,8 @@ var UserService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _UserService_CreateProfile_Handler,
 		},
 		{
-			MethodName: "GetProfile",
-			Handler:    _UserService_GetProfile_Handler,
+			MethodName: "GetPublicProfile",
+			Handler:    _UserService_GetPublicProfile_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

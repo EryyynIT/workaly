@@ -22,20 +22,24 @@ import (
 
 type fakeUsers struct {
 	pb.UserServiceClient
-	err      error
-	called   atomic.Bool
-	deadline atomic.Bool
+	err     error
+	profile *pb.GetPublicProfileResponse
+	called  atomic.Bool
+	seenID  atomic.Value // string: last user_id passed to GetPublicProfile
 }
 
-func (f *fakeUsers) CreateProfile(ctx context.Context, _ *pb.CreateProfileRequest, _ ...grpc.CallOption) (*pb.CreateProfileResponse, error) {
+func (f *fakeUsers) CreateProfile(_ context.Context, _ *pb.CreateProfileRequest, _ ...grpc.CallOption) (*pb.CreateProfileResponse, error) {
 	f.called.Store(true)
-	_, hasDeadline := ctx.Deadline()
-	f.deadline.Store(hasDeadline)
 	return &pb.CreateProfileResponse{Status: pb.CreateProfileResponse_SUCCESS}, f.err
 }
 
-func (f *fakeUsers) GetProfile(ctx context.Context, _ *pb.GetProfileRequest, _ ...grpc.CallOption) (*pb.GetProfileResponse, error) {
-	return &pb.GetProfileResponse{Status: pb.GetProfileResponse_SUCCESS}, nil
+func (f *fakeUsers) GetPublicProfile(_ context.Context, req *pb.GetPublicProfileRequest, _ ...grpc.CallOption) (*pb.GetPublicProfileResponse, error) {
+	f.called.Store(true)
+	f.seenID.Store(req.UserId)
+	if f.profile != nil {
+		return f.profile, nil
+	}
+	return nil, f.err
 }
 
 type fakeHealth struct {
@@ -72,6 +76,12 @@ func post(app *application, path, body string) *httptest.ResponseRecorder {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	app.router().ServeHTTP(w, req)
+	return w
+}
+
+func get(app *application, path string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	app.router().ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 	return w
 }
 
@@ -201,6 +211,63 @@ func TestPanicReturnsGenericErrorWithoutHeaders(t *testing.T) {
 	}
 }
 
+func TestPublicProfileEndpoint(t *testing.T) {
+	const id = "019a2b7e-7c3a-7b1a-8f0e-1a2b3c4d5e6f"
+
+	// Success: the id comes from the path, the body carries only public fields.
+	app, users := testApp()
+	users.profile = &pb.GetPublicProfileResponse{Name: "Worker", Username: "worker"}
+	w := get(app, "/users/"+id)
+	if w.Code != http.StatusOK {
+		t.Fatalf("got %d, want 200", w.Code)
+	}
+	if got := users.seenID.Load().(string); got != id {
+		t.Fatalf("RPC received %q, want the path id %q", got, id)
+	}
+	if !strings.Contains(w.Body.String(), `"name":"Worker"`) ||
+		!strings.Contains(w.Body.String(), `"username":"worker"`) {
+		t.Fatalf("unexpected profile body: %s", w.Body.String())
+	}
+	for _, leaked := range []string{"email", "password", "secret"} {
+		if strings.Contains(w.Body.String(), leaked) {
+			t.Fatalf("profile response leaked %q: %s", leaked, w.Body.String())
+		}
+	}
+
+	// Error mapping: a profile lookup is a public read, so NotFound is a
+	// normal 404 here, unlike the auth flows that must not leak existence.
+	for _, tc := range []struct {
+		code codes.Code
+		http int
+	}{
+		{codes.NotFound, 404}, {codes.InvalidArgument, 400}, {codes.Unavailable, 503},
+		{codes.DeadlineExceeded, 504}, {codes.Internal, 500},
+	} {
+		t.Run(tc.code.String(), func(t *testing.T) {
+			app, users := testApp()
+			users.err = status.Error(tc.code, "secret db details")
+			w := get(app, "/users/"+id)
+			if w.Code != tc.http || strings.Contains(w.Body.String(), "secret") {
+				t.Fatalf("unsafe error response: %d %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestPublicProfileIsRateLimitedPerIP(t *testing.T) {
+	const id = "019a2b7e-7c3a-7b1a-8f0e-1a2b3c4d5e6f"
+	app, users := testApp()
+	users.profile = &pb.GetPublicProfileResponse{Name: "Worker", Username: "worker"}
+	for i := 0; i < 60; i++ {
+		if w := get(app, "/users/"+id); w.Code == http.StatusTooManyRequests {
+			t.Fatalf("request %d of 60 hit the limit", i+1)
+		}
+	}
+	if w := get(app, "/users/"+id); w.Code != http.StatusTooManyRequests {
+		t.Fatalf("61st request got %d, want 429", w.Code)
+	}
+}
+
 func TestIsDuplicateKey(t *testing.T) {
 	pgDup := &pgconn.PgError{Code: "23505", Message: "duplicate key value"}
 	if !isDuplicateKey(fmt.Errorf("insert: %w", pgDup)) {
@@ -237,8 +304,8 @@ func TestWriteDBErrorMapsFailureClasses(t *testing.T) {
 
 func TestCancelledRequestReachesUpstream(t *testing.T) {
 	// The deadline comes from the request, not from context.Background().
-	// /register is used because it is the only handler that calls the
-	// user-service RPC; a stale /login never reaches upstream at all.
+	// /register is used because its RPC call must observe that deadline; the
+	// public profile lookup (/users/:id) exercises the same path.
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
 	app, _ := testApp()

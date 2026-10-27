@@ -44,7 +44,9 @@ def main():
         assert request("/healthz")[0] == 200
         code, _, body = request("/login", {"email": "outage@example.com", "password": "password"})
         assert code == 503 and body == {"error": "account service unavailable"}, (code, body)
-        print("PASS: dependency outage, readiness 503, liveness 200, safe login 503")
+        # Public reads must not depend on auth-db: unknown id resolves in user-db -> 404.
+        assert request(f"/users/{uuid.uuid4()}")[0] == 404, "profile read broke during auth-db outage"
+        print("PASS: dependency outage, readiness 503, liveness 200, safe login 503, public read unaffected")
         return
     if sys.argv[1:]:
         raise SystemExit("usage: python3 scripts/smoke.py [--expect-unavailable]")
@@ -54,7 +56,8 @@ def main():
     password = "smoke-test-password"
     credentials = {"email": email, "password": password}
 
-    code, headers, body = request("/register", {**credentials, "name": "Smoke Test", "username": "smoke-" + uuid.uuid4().hex})
+    username = "smoke-" + uuid.uuid4().hex
+    code, headers, body = request("/register", {**credentials, "name": "Smoke Test", "username": username})
     assert code == 200, (code, body)
     user_id = body["user_id"]
     assert len(user_id) == 36  # UUID
@@ -79,6 +82,12 @@ def main():
     # Short password rejected
     assert request("/register", {**credentials, "password": "short", "name": "Smoke Test", "username": "u"})[0] == 400
 
+    # Public profile: readable without a session, only public fields come back
+    code, _, pub = request(f"/users/{user_id}")
+    assert code == 200 and pub == {"user_id": user_id, "name": "Smoke Test", "username": username}, (code, pub)
+    assert request(f"/users/{uuid.uuid4()}")[0] == 404, "unknown profile must 404"
+    assert request("/users/not-a-uuid")[0] == 400, "malformed profile id must 400"
+
     # Refresh flow
     refresh_token = body["refresh_token"]
     code, _, body2 = request("/refresh", {"refresh_token": refresh_token})
@@ -101,7 +110,7 @@ def main():
     code, _, _ = request("/refresh", {"refresh_token": new_refresh})
     assert code == 401, code
 
-    print("PASS: readiness, registration, stable identity, cookie, duplicate, login, invalid credentials, validation, refresh, logout")
+    print("PASS: readiness, registration, stable identity, cookie, duplicate, login, invalid credentials, validation, public profile, refresh, logout")
 
 
 if __name__ == "__main__":

@@ -11,8 +11,11 @@ service UserService {
   // Creates a profile for a freshly registered account. Idempotent by user_id:
   // Auth retries this call when the registration outcome was unknown.
   rpc CreateProfile(CreateProfileRequest) returns (CreateProfileResponse);
-  // Resolves a user_id to the public display name. Internal use only.
-  rpc GetProfile(GetProfileRequest) returns (GetProfileResponse);
+  // Public profile view by user_id: display name and username, nothing else.
+  // Contains no credentials or contact data, so any caller may read it.
+  // Here user_id is the address of public data, not a proof of identity:
+  // no authorization decision may depend on it.
+  rpc GetPublicProfile(GetPublicProfileRequest) returns (GetPublicProfileResponse);
 }
 
 message CreateProfileRequest {
@@ -28,15 +31,11 @@ message CreateProfileResponse {
   Status status = 1;
 }
 
-message GetProfileRequest {
+message GetPublicProfileRequest {
   string user_id = 1;
 }
 
-message GetProfileResponse {
-  enum Status {
-    SUCCESS = 0;
-  }
-  Status status = 1;
-  string name = 2;
-  string username = 3;
+message GetPublicProfileResponse {
+  string name = 1;
+  string username = 2;
 }

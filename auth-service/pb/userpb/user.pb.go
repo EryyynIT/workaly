@@ -64,49 +64,6 @@ func (CreateProfileResponse_Status) EnumDescriptor() ([]byte, []int) {
 	return file_user_proto_rawDescGZIP(), []int{1, 0}
 }
 
-type GetProfileResponse_Status int32
-
-const (
-	GetProfileResponse_SUCCESS GetProfileResponse_Status = 0
-)
-
-// Enum value maps for GetProfileResponse_Status.
-var (
-	GetProfileResponse_Status_name = map[int32]string{
-		0: "SUCCESS",
-	}
-	GetProfileResponse_Status_value = map[string]int32{
-		"SUCCESS": 0,
-	}
-)
-
-func (x GetProfileResponse_Status) Enum() *GetProfileResponse_Status {
-	p := new(GetProfileResponse_Status)
-	*p = x
-	return p
-}
-
-func (x GetProfileResponse_Status) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (GetProfileResponse_Status) Descriptor() protoreflect.EnumDescriptor {
-	return file_user_proto_enumTypes[1].Descriptor()
-}
-
-func (GetProfileResponse_Status) Type() protoreflect.EnumType {
-	return &file_user_proto_enumTypes[1]
-}
-
-func (x GetProfileResponse_Status) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use GetProfileResponse_Status.Descriptor instead.
-func (GetProfileResponse_Status) EnumDescriptor() ([]byte, []int) {
-	return file_user_proto_rawDescGZIP(), []int{3, 0}
-}
-
 type CreateProfileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
@@ -211,27 +168,27 @@ func (x *CreateProfileResponse) GetStatus() CreateProfileResponse_Status {
 	return CreateProfileResponse_SUCCESS
 }
 
-type GetProfileRequest struct {
+type GetPublicProfileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GetProfileRequest) Reset() {
-	*x = GetProfileRequest{}
+func (x *GetPublicProfileRequest) Reset() {
+	*x = GetPublicProfileRequest{}
 	mi := &file_user_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetProfileRequest) String() string {
+func (x *GetPublicProfileRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetProfileRequest) ProtoMessage() {}
+func (*GetPublicProfileRequest) ProtoMessage() {}
 
-func (x *GetProfileRequest) ProtoReflect() protoreflect.Message {
+func (x *GetPublicProfileRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_user_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -243,41 +200,40 @@ func (x *GetProfileRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetProfileRequest.ProtoReflect.Descriptor instead.
-func (*GetProfileRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use GetPublicProfileRequest.ProtoReflect.Descriptor instead.
+func (*GetPublicProfileRequest) Descriptor() ([]byte, []int) {
 	return file_user_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *GetProfileRequest) GetUserId() string {
+func (x *GetPublicProfileRequest) GetUserId() string {
 	if x != nil {
 		return x.UserId
 	}
 	return ""
 }
 
-type GetProfileResponse struct {
-	state         protoimpl.MessageState    `protogen:"open.v1"`
-	Status        GetProfileResponse_Status `protobuf:"varint,1,opt,name=status,proto3,enum=user.GetProfileResponse_Status" json:"status,omitempty"`
-	Name          string                    `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Username      string                    `protobuf:"bytes,3,opt,name=username,proto3" json:"username,omitempty"`
+type GetPublicProfileResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Username      string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GetProfileResponse) Reset() {
-	*x = GetProfileResponse{}
+func (x *GetPublicProfileResponse) Reset() {
+	*x = GetPublicProfileResponse{}
 	mi := &file_user_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetProfileResponse) String() string {
+func (x *GetPublicProfileResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetProfileResponse) ProtoMessage() {}
+func (*GetPublicProfileResponse) ProtoMessage() {}
 
-func (x *GetProfileResponse) ProtoReflect() protoreflect.Message {
+func (x *GetPublicProfileResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_user_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -289,26 +245,19 @@ func (x *GetProfileResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetProfileResponse.ProtoReflect.Descriptor instead.
-func (*GetProfileResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use GetPublicProfileResponse.ProtoReflect.Descriptor instead.
+func (*GetPublicProfileResponse) Descriptor() ([]byte, []int) {
 	return file_user_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *GetProfileResponse) GetStatus() GetProfileResponse_Status {
-	if x != nil {
-		return x.Status
-	}
-	return GetProfileResponse_SUCCESS
-}
-
-func (x *GetProfileResponse) GetName() string {
+func (x *GetPublicProfileResponse) GetName() string {
 	if x != nil {
 		return x.Name
 	}
 	return ""
 }
 
-func (x *GetProfileResponse) GetUsername() string {
+func (x *GetPublicProfileResponse) GetUsername() string {
 	if x != nil {
 		return x.Username
 	}
@@ -328,19 +277,15 @@ const file_user_proto_rawDesc = "" +
 	"\x15CreateProfileResponse\x12:\n" +
 	"\x06status\x18\x01 \x01(\x0e2\".user.CreateProfileResponse.StatusR\x06status\"\x15\n" +
 	"\x06Status\x12\v\n" +
-	"\aSUCCESS\x10\x00\",\n" +
-	"\x11GetProfileRequest\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\tR\x06userId\"\x94\x01\n" +
-	"\x12GetProfileResponse\x127\n" +
-	"\x06status\x18\x01 \x01(\x0e2\x1f.user.GetProfileResponse.StatusR\x06status\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1a\n" +
-	"\busername\x18\x03 \x01(\tR\busername\"\x15\n" +
-	"\x06Status\x12\v\n" +
-	"\aSUCCESS\x10\x002\x98\x01\n" +
+	"\aSUCCESS\x10\x00\"2\n" +
+	"\x17GetPublicProfileRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"J\n" +
+	"\x18GetPublicProfileResponse\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
+	"\busername\x18\x02 \x01(\tR\busername2\xaa\x01\n" +
 	"\vUserService\x12H\n" +
-	"\rCreateProfile\x12\x1a.user.CreateProfileRequest\x1a\x1b.user.CreateProfileResponse\x12?\n" +
-	"\n" +
-	"GetProfile\x12\x17.user.GetProfileRequest\x1a\x18.user.GetProfileResponseB4Z2github.com/EryyynIT/workaly/auth-service/pb/userpbb\x06proto3"
+	"\rCreateProfile\x12\x1a.user.CreateProfileRequest\x1a\x1b.user.CreateProfileResponse\x12Q\n" +
+	"\x10GetPublicProfile\x12\x1d.user.GetPublicProfileRequest\x1a\x1e.user.GetPublicProfileResponseB4Z2github.com/EryyynIT/workaly/auth-service/pb/userpbb\x06proto3"
 
 var (
 	file_user_proto_rawDescOnce sync.Once
@@ -354,28 +299,26 @@ func file_user_proto_rawDescGZIP() []byte {
 	return file_user_proto_rawDescData
 }
 
-var file_user_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_user_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_user_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_user_proto_goTypes = []any{
 	(CreateProfileResponse_Status)(0), // 0: user.CreateProfileResponse.Status
-	(GetProfileResponse_Status)(0),    // 1: user.GetProfileResponse.Status
-	(*CreateProfileRequest)(nil),      // 2: user.CreateProfileRequest
-	(*CreateProfileResponse)(nil),     // 3: user.CreateProfileResponse
-	(*GetProfileRequest)(nil),         // 4: user.GetProfileRequest
-	(*GetProfileResponse)(nil),        // 5: user.GetProfileResponse
+	(*CreateProfileRequest)(nil),      // 1: user.CreateProfileRequest
+	(*CreateProfileResponse)(nil),     // 2: user.CreateProfileResponse
+	(*GetPublicProfileRequest)(nil),   // 3: user.GetPublicProfileRequest
+	(*GetPublicProfileResponse)(nil),  // 4: user.GetPublicProfileResponse
 }
 var file_user_proto_depIdxs = []int32{
 	0, // 0: user.CreateProfileResponse.status:type_name -> user.CreateProfileResponse.Status
-	1, // 1: user.GetProfileResponse.status:type_name -> user.GetProfileResponse.Status
-	2, // 2: user.UserService.CreateProfile:input_type -> user.CreateProfileRequest
-	4, // 3: user.UserService.GetProfile:input_type -> user.GetProfileRequest
-	3, // 4: user.UserService.CreateProfile:output_type -> user.CreateProfileResponse
-	5, // 5: user.UserService.GetProfile:output_type -> user.GetProfileResponse
-	4, // [4:6] is the sub-list for method output_type
-	2, // [2:4] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	1, // 1: user.UserService.CreateProfile:input_type -> user.CreateProfileRequest
+	3, // 2: user.UserService.GetPublicProfile:input_type -> user.GetPublicProfileRequest
+	2, // 3: user.UserService.CreateProfile:output_type -> user.CreateProfileResponse
+	4, // 4: user.UserService.GetPublicProfile:output_type -> user.GetPublicProfileResponse
+	3, // [3:5] is the sub-list for method output_type
+	1, // [1:3] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_user_proto_init() }
@@ -388,7 +331,7 @@ func file_user_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_user_proto_rawDesc), len(file_user_proto_rawDesc)),
-			NumEnums:      2,
+			NumEnums:      1,
 			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,

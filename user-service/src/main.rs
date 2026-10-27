@@ -3,7 +3,9 @@ use std::time::Duration;
 use tonic::{Request, Response, Status, transport::Server};
 use tonic_health::ServingStatus;
 use user::user_service_server::{UserService, UserServiceServer};
-use user::{CreateProfileRequest, CreateProfileResponse, GetProfileRequest, GetProfileResponse};
+use user::{
+    CreateProfileRequest, CreateProfileResponse, GetPublicProfileRequest, GetPublicProfileResponse,
+};
 
 use crate::error::database_status;
 
@@ -60,10 +62,12 @@ impl UserService for ProfileService {
         Ok(Response::new(CreateProfileResponse { status: 0 }))
     }
 
-    async fn get_profile(
+    // Public view: name and username only. No credentials or contact data
+    // may ever appear here, so the response is safe for any caller.
+    async fn get_public_profile(
         &self,
-        request: Request<GetProfileRequest>,
-    ) -> Result<Response<GetProfileResponse>, Status> {
+        request: Request<GetPublicProfileRequest>,
+    ) -> Result<Response<GetPublicProfileResponse>, Status> {
         let req = request.into_inner();
         let user_id = parse_user_id(&req.user_id)?;
         let profile: Option<(String, String)> =
@@ -73,11 +77,9 @@ impl UserService for ProfileService {
                 .await
                 .map_err(database_status)?;
         match profile {
-            Some((name, username)) => Ok(Response::new(GetProfileResponse {
-                status: 0,
-                name,
-                username,
-            })),
+            Some((name, username)) => {
+                Ok(Response::new(GetPublicProfileResponse { name, username }))
+            }
             None => Err(Status::not_found("profile not found")),
         }
     }
@@ -197,6 +199,13 @@ mod tests {
                 user_id: "019a2b7e-7c3a-7b1a-8f0e-1a2b3c4d5e6f".into(),
                 name: " ".into(),
                 username: "worker".into(),
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(error.code(), tonic::Code::InvalidArgument);
+        let error = service
+            .get_public_profile(Request::new(GetPublicProfileRequest {
+                user_id: "not-a-uuid".into(),
             }))
             .await
             .unwrap_err();
