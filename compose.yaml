@@ -1,0 +1,77 @@
+name: workaly
+
+services:
+  user-db:
+    image: docker.io/library/postgres:17
+    environment:
+      POSTGRES_USER: workaly_user
+      POSTGRES_PASSWORD: local-development-only
+      POSTGRES_DB: workaly_user
+    volumes:
+      - user-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workaly_user -d workaly_user"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
+
+  auth-db:
+    image: docker.io/library/postgres:17
+    environment:
+      POSTGRES_USER: workaly_auth
+      POSTGRES_PASSWORD: local-development-only
+      POSTGRES_DB: workaly_auth
+    volumes:
+      - auth-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workaly_auth -d workaly_auth"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
+
+  user-service:
+    image: localhost/workaly-user:s0
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    environment:
+      DATABASE_URL: postgres://workaly_user:local-development-only@user-db:5432/workaly_user?options=-c%20statement_timeout%3D3000
+      GRPC_ADDR: 0.0.0.0:50051
+    depends_on:
+      user-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  auth-service:
+    image: localhost/workaly-auth:s0
+    build:
+      context: .
+      dockerfile: auth-service/Dockerfile
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env to a random secret of at least 32 bytes}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://127.0.0.1:8080}
+      HTTP_ADDR: 0.0.0.0:8080
+      USER_SERVICE_ADDR: user-service:50051
+      AUTH_DATABASE_URL: postgres://workaly_auth:local-development-only@auth-db:5432/workaly_auth?options=-c%20statement_timeout%3D3000
+      DEV_MAIL_LOG: ${DEV_MAIL_LOG:-true}
+      GIN_MODE: release
+    ports:
+      - "127.0.0.1:${AUTH_PORT:-8080}:8080"
+    depends_on:
+      auth-db:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
+
+volumes:
+  user-data:
+  auth-data:
