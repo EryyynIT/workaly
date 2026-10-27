@@ -6,9 +6,13 @@ edition = "2024"
 [dependencies]
 argon2 = { version = "0.5.3", features = ["password-hash", "simple"] }
 prost = "0.13.1"
-sqlx = { version = "0.8.6", features = ["postgres", "runtime-tokio"] }
+sqlx = { version = "0.8.6", features = ["postgres", "runtime-tokio", "uuid"] }
 tokio = { version = "1.46.1", features = ["full"] }
 tonic = "0.13.1"
+tonic-health = "0.13.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json"] }
+uuid = { version = "1.29.0", features = ["v4"] }
 
 [build-dependencies]
 tonic-build = "0.13.1"
