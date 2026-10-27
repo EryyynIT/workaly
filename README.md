@@ -1,38 +1,56 @@
 # Workaly
 
-Is a Workaly project.
-A project is a collection of microservices
-that work together to create a complete solution.
-I started to write it, since I want to learn more
-about microservices architecture by practice.
+Workaly — платформа фриланс-заказов и вакансий с равными условиями для
+заказчиков и исполнителей, работодателей и кандидатов. Цель — удобный и
+надёжный продукт для людей, а не демонстрация технологий.
 
-## Project consists of
+Оба направления проектируются с самого начала, но имеют отдельные правила:
+найм не является разновидностью заказа, а отклик на вакансию — сделкой.
+Один человек может выступать в разных ролях без создания отдельных аккаунтов.
 
-- [Workaly Auth Service](https://github.com/EryyynIT/workaly/tree/main/auth-service)
-- [Workaly User Service](https://github.com/EryyynIT/workaly/tree/main/user-service)
-- [Workaly Task Service](https://github.com/EryyynIT/workaly/tree/main/task-service)
-- [Workaly Job Service](https://github.com/EryyynIT/workaly/tree/main/job-service)
-- [Workaly Notification Service](https://github.com/EryyynIT/workaly/tree/main/notification-service)
-- [Workaly Chat Service](https://github.com/EryyynIT/workaly/tree/main/chat-service)
-- [Workaly Payment Service](https://github.com/EryyynIT/workaly/tree/main/payment-service)
-- [Workaly Gateway Service](https://github.com/EryyynIT/workaly/gateway)
-- [Workaly Frontend](https://github.com/EryyynIT/workaly/frontend)
+## Документация
 
-## Tech used
+- [Продуктовые принципы и сценарии](docs/product.md)
+- [Границы сервисов и требования к взаимодействию](docs/architecture.md)
+- [Поэтапный план и критерии готовности](docs/roadmap.md)
+- [Локальный запуск и проверки](docs/development.md)
+- [Журнал реализации и выполненные проверки](docs/progress.md)
 
-- [Go](https://go.dev/) ([Gin](https://github.com/gin-gonic/gin))
-- [Rust](https://www.rust-lang.org/) ([Axum](https://github.com/tokio-rs/axum))
-- [Docker](https://www.docker.com/)
-- [Kubernetes](https://kubernetes.io/)
-- [Kafka](https://kafka.apache.org/)
-- [PostgreSQL](https://www.postgresql.org/)
-- [Redis](https://redis.io/)
-- [gRPC](https://grpc.io/)
-- [Nginx](https://www.nginx.com/)
+## Текущее состояние
 
-## License
+Работает начальная связка HTTP Auth → gRPC User → PostgreSQL: регистрация и
+проверка пароля. Это ещё не готовая система идентификации и **не публичный релиз**.
+Отзыв сессий, восстановление доступа, защита от перебора и полноценная авторизация
+должны появиться до открытия доступа пользователям.
 
-The project is licensed under MPL-2.0
-You can use the project in both closed and open projects,
-but any modifications to the code must be made
-public in accordance with the terms of the MPL.
+| Сервис | Назначение | Состояние |
+|---|---|---|
+| `auth-service` (Go / Gin) | Вход и выдача токена | Начальная реализация |
+| `user-service` (Rust / Tonic) | Аккаунты; временно также проверка паролей | Начальная реализация |
+| `job-service` (Go) | Вакансии и отклики кандидатов | Заготовка |
+| `task-service` (Go) | Фриланс-заказы и их выполнение | Заготовка |
+| `chat-service` (Go) | Переписка | Заготовка |
+| `notifications-service` (Go) | Доставка уведомлений | Заготовка |
+| `payment-service` (Rust) | Учёт платежей и интеграция с провайдером | Заготовка |
+
+Gateway и frontend пока не реализованы. Kafka, Redis и Kubernetes — возможные
+компоненты целевой системы, а не уже работающие возможности репозитория.
+
+## Быстрый старт
+
+Требуются Docker с Compose либо Podman с `podman-compose`.
+
+```sh
+cp .env.example .env
+# Установить JWT_SECRET: openssl rand -hex 32
+docker compose up --build -d
+curl --fail http://127.0.0.1:8080/readyz
+python3 scripts/smoke.py
+```
+
+Для Podman заменить `docker compose` на `podman-compose`. Настройки по умолчанию
+предназначены только для локальной разработки; подробности в инструкции запуска.
+
+## Лицензия
+
+[MPL-2.0](LICENSE).
