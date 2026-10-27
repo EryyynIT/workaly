@@ -13,9 +13,12 @@ from urllib.request import Request, urlopen
 BASE = os.environ.get("BASE_URL", "http://127.0.0.1:8080").rstrip("/")
 
 
-def request(path, fields=None, raw=None):
+def request(path, fields=None, raw=None, cookie=None):
+    headers = {"Content-Type": "application/json"}
+    if cookie:
+        headers["Cookie"] = cookie
     data = raw if raw is not None else (None if fields is None else json.dumps(fields).encode())
-    req = Request(BASE + path, data=data, headers={"Content-Type": "application/json"})
+    req = Request(BASE + path, data=data, headers=headers)
     try:
         response = urlopen(req, timeout=10)
     except HTTPError as error:
@@ -88,6 +91,20 @@ def main():
     assert request(f"/users/{uuid.uuid4()}")[0] == 404, "unknown profile must 404"
     assert request("/users/not-a-uuid")[0] == 400, "malformed profile id must 400"
 
+    # Cross-account isolation: /sessions shows only the caller's sessions.
+    # The first account has two own sessions (register + login); a freshly
+    # registered second account must add nothing to that list.
+    code, _, body_b = request("/register", {
+        "email": "smoke-b-" + uuid.uuid4().hex + "@example.com",
+        "password": password,
+        "name": "Smoke B",
+        "username": "smoke-b-" + uuid.uuid4().hex,
+    })
+    assert code == 200, (code, body_b)
+    code, _, mine = request("/sessions", cookie="token=" + cookie.value)
+    assert code == 200 and len(mine["sessions"]) == 2, (code, mine)
+    assert body_b["user_id"] not in json.dumps(mine)
+
     # Refresh flow
     refresh_token = body["refresh_token"]
     code, _, body2 = request("/refresh", {"refresh_token": refresh_token})
@@ -110,7 +127,7 @@ def main():
     code, _, _ = request("/refresh", {"refresh_token": new_refresh})
     assert code == 401, code
 
-    print("PASS: readiness, registration, stable identity, cookie, duplicate, login, invalid credentials, validation, public profile, refresh, logout")
+    print("PASS: readiness, registration, stable identity, cookie, duplicate, login, invalid credentials, validation, public profile, own sessions, refresh, logout")
 
 
 if __name__ == "__main__":
