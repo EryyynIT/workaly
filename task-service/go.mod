@@ -1,4 +1,4 @@
-module github.com/EryyynIT/workaly/freelance-service
+module github.com/EryyynIT/workaly/task-service
 
 go 1.24.5
 
