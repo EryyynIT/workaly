@@ -2,154 +2,82 @@ package main
 
 import (
 	"context"
-	"log"
+	"errors"
+	"log/slog"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
-	pb "auth-service/pb/userpb/proto"
-
-	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
+	pb "github.com/EryyynIT/workaly/auth-service/pb/userpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
-type loginUser struct {
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
-}
-
-type registerUser struct {
-	Name     string `json:"name" binding:"required"`
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
-}
-
-func register(c *gin.Context) {
-	var user registerUser
-
-	if err := c.ShouldBindJSON(&user); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
-	defer cancel()
-
-	res, err := grpcClient.Register(ctx, &pb.RegisterRequest{
-		Name:     user.Name,
-		Username: user.Username,
-		Password: user.Password,
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-	if res.Status != pb.RegisterResponse_SUCCESS {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": res.Status.String(),
-		})
-		return
-	}
-
-	now := time.Now().UTC()
-	claims := jwt.MapClaims{
-		"username": user.Username,
-		"exp":      now.Add(time.Hour * 24).Unix(),
-		"iat":      now.Unix(),
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-	secure := true
-	httpOnly := true
-	tokenStr, err := token.SignedString([]byte(""))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-	c.SetCookie("token", tokenStr, 3600, "/", "", secure, httpOnly)
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "success",
-	})
-}
-
-func login(c *gin.Context) {
-	var user loginUser
-
-	if err := c.ShouldBindJSON(&user); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
-	defer cancel()
-
-	res, err := grpcClient.Login(ctx, &pb.LoginRequest{
-		Username: user.Username,
-		Password: user.Password,
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-	if res.Status != pb.LoginResponse_SUCCESS {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": res.Status.String(),
-		})
-		return
-	}
-
-	now := time.Now().UTC()
-	claims := jwt.MapClaims{
-		"username": user.Username,
-		"exp":      now.Add(time.Hour * 24).Unix(),
-		"iat":      now.Unix(),
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenStr, err := token.SignedString([]byte(""))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	secure := true
-	httpOnly := true
-	c.SetCookie("token", tokenStr, 3600, "/", "", secure, httpOnly)
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "success",
-	})
-}
-
-var grpcClient pb.UserServiceClient
-
 func main() {
-	conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	if err := run(); err != nil {
+		slog.Error("auth service stopped", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	cfg, err := loadConfig(os.Getenv)
 	if err != nil {
-		log.Fatalf("failed to connect to user-service: %v", err)
+		return err
+	}
+	db, err := openDB(context.Background(), cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	if err := migrate(context.Background(), db); err != nil {
+		return err
+	}
+	// shortcut: plaintext gRPC is local-only; require service authentication/TLS before public deployment.
+	conn, err := grpc.NewClient(cfg.UserServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return err
 	}
 	defer conn.Close()
-
-	grpcClient = pb.NewUserServiceClient(conn)
-
-	router := gin.Default()
-
-	router.POST("/register", register)
-
-	router.POST("/login", login)
-
-	router.Run()
+	app := &application{
+		cfg:     cfg,
+		db:      db,
+		users:   pb.NewUserServiceClient(conn),
+		health:  healthpb.NewHealthClient(conn),
+		mail:    mailerFromEnv(),
+		limiter: newRateLimiter(),
+	}
+	app.startProfileRetryWorker(context.Background())
+	server := &http.Server{
+		Addr:              cfg.HTTPAddr,
+		Handler:           app.router(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    16 << 10,
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	stopped := make(chan error, 1)
+	go func() { stopped <- server.ListenAndServe() }()
+	slog.Info("auth service starting", "address", cfg.HTTPAddr)
+	select {
+	case err := <-stopped:
+		return err
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			return err
+		}
+		if err := <-stopped; !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	}
 }
