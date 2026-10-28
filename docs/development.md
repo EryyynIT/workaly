@@ -81,6 +81,7 @@ curl -i http://127.0.0.1:8080/users/<user_id>
 | `PUBLIC_ORIGIN` | Auth | Разрешённый browser Origin без пути; по умолчанию `http://127.0.0.1:8080` |
 | `HTTP_ADDR` | Auth | По умолчанию `127.0.0.1:8080` |
 | `USER_SERVICE_ADDR` | Auth | По умолчанию `127.0.0.1:50051` |
+| `JOB_SERVICE_ADDR` | Auth | По умолчанию `127.0.0.1:50052` |
 | `DATABASE_URL` | User | Обязательное подключение PostgreSQL; не логировать |
 | `GRPC_ADDR` | User | По умолчанию `127.0.0.1:50051` |
 | `DATABASE_URL` | Job | Обязательное подключение PostgreSQL; не логировать |

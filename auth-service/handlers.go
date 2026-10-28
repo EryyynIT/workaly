@@ -15,6 +15,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	jobpb "github.com/EryyynIT/workaly/auth-service/pb/jobpb"
 	pb "github.com/EryyynIT/workaly/auth-service/pb/userpb"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
@@ -31,11 +32,13 @@ type application struct {
 	// why handlers branch on it. shortcut: removing these branches requires a
 	// test database (sqlmock or testcontainers); deferred until module
 	// downloads are reliable.
-	db      *sql.DB
-	users   pb.UserServiceClient
-	health  healthpb.HealthClient
-	mail    mailSender
-	limiter *rateLimiter
+	db        *sql.DB
+	users     pb.UserServiceClient
+	vacancies jobpb.JobServiceClient
+	health    healthpb.HealthClient
+	jobHealth healthpb.HealthClient
+	mail      mailSender
+	limiter   *rateLimiter
 }
 
 type registerRequest struct {
@@ -88,21 +91,40 @@ func (app *application) router() *gin.Engine {
 	router.GET("/sessions", app.listSessions)
 	router.POST("/logout-all", app.jsonRequest, app.logoutAll)
 	router.GET("/users/:user_id", app.publicProfile)
+	// Vacancy catalog: the edge authenticates the browser and proxies the
+	// actor (JWT subject) to job-service over the internal channel.
+	router.POST("/vacancies", app.jsonRequest, app.createVacancy)
+	router.GET("/vacancies/:id", app.getVacancy)
+	router.PATCH("/vacancies/:id", app.jsonRequest, app.patchVacancy)
+	router.POST("/vacancies/:id/publish", app.jsonRequest, app.publishVacancy)
+	router.POST("/vacancies/:id/close", app.jsonRequest, app.closeVacancy)
+	router.DELETE("/vacancies/:id", app.deleteVacancy)
+	router.GET("/my/vacancies", app.listMyVacancies)
 	return router
 }
 
 func (app *application) jsonRequest(c *gin.Context) {
+	if !app.sameOrigin(c) {
+		return
+	}
 	mediaType, _, err := mime.ParseMediaType(c.GetHeader("Content-Type"))
 	if err != nil || mediaType != "application/json" {
 		c.AbortWithStatusJSON(http.StatusUnsupportedMediaType, gin.H{"error": "application/json required"})
 		return
 	}
-	if origin := c.GetHeader("Origin"); (origin != "" && origin != app.cfg.PublicOrigin) || c.GetHeader("Sec-Fetch-Site") == "cross-site" {
-		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "origin not allowed"})
-		return
-	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<10)
 	c.Next()
+}
+
+// sameOrigin refuses cross-site mutations. DELETE has no JSON body, so it
+// carries only this check: HTML forms cannot issue DELETE, and a fetch() from
+// another origin needs a CORS preflight the browser will refuse.
+func (app *application) sameOrigin(c *gin.Context) bool {
+	if origin := c.GetHeader("Origin"); (origin != "" && origin != app.cfg.PublicOrigin) || c.GetHeader("Sec-Fetch-Site") == "cross-site" {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "origin not allowed"})
+		return false
+	}
+	return true
 }
 
 func (app *application) register(c *gin.Context) {
@@ -908,10 +930,20 @@ func writeRPCError(c *gin.Context, err error) {
 func (app *application) ready(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), time.Second)
 	defer cancel()
-	res, err := app.health.Check(ctx, &healthpb.HealthCheckRequest{Service: "user.UserService"})
-	if err != nil || res == nil || res.Status != healthpb.HealthCheckResponse_SERVING {
-		c.Status(http.StatusServiceUnavailable)
-		return
+	// Every dependency the edge proxies to must answer: a half-ready edge
+	// would otherwise return 503 only on some endpoints.
+	for _, probe := range []struct {
+		client  healthpb.HealthClient
+		service string
+	}{
+		{app.health, "user.UserService"},
+		{app.jobHealth, "job.JobService"},
+	} {
+		res, err := probe.client.Check(ctx, &healthpb.HealthCheckRequest{Service: probe.service})
+		if err != nil || res == nil || res.Status != healthpb.HealthCheckResponse_SERVING {
+			c.Status(http.StatusServiceUnavailable)
+			return
+		}
 	}
 	if app.db != nil {
 		if err := app.db.PingContext(ctx); err != nil {

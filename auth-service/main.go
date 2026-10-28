@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	jobpb "github.com/EryyynIT/workaly/auth-service/pb/jobpb"
 	pb "github.com/EryyynIT/workaly/auth-service/pb/userpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -38,18 +39,25 @@ func run() error {
 		return err
 	}
 	// shortcut: plaintext gRPC is local-only; require service authentication/TLS before public deployment.
-	conn, err := grpc.NewClient(cfg.UserServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	userConn, err := grpc.NewClient(cfg.UserServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer userConn.Close()
+	jobConn, err := grpc.NewClient(cfg.JobServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return err
+	}
+	defer jobConn.Close()
 	app := &application{
-		cfg:     cfg,
-		db:      db,
-		users:   pb.NewUserServiceClient(conn),
-		health:  healthpb.NewHealthClient(conn),
-		mail:    mailerFromEnv(),
-		limiter: newRateLimiter(),
+		cfg:       cfg,
+		db:        db,
+		users:     pb.NewUserServiceClient(userConn),
+		vacancies: jobpb.NewJobServiceClient(jobConn),
+		health:    healthpb.NewHealthClient(userConn),
+		jobHealth: healthpb.NewHealthClient(jobConn),
+		mail:      mailerFromEnv(),
+		limiter:   newRateLimiter(),
 	}
 	app.startProfileRetryWorker(context.Background())
 	server := &http.Server{

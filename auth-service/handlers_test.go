@@ -13,6 +13,7 @@ import (
 
 	pb "github.com/EryyynIT/workaly/auth-service/pb/userpb"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -63,12 +64,32 @@ func testApp() (*application, *fakeUsers) {
 			PublicOrigin: "https://workaly.example",
 			CookieSecure: true,
 		},
-		users:   users,
-		health:  fakeHealth{},
-		mail:    disabledMailer{},
-		limiter: newRateLimiter(),
+		users:     users,
+		vacancies: &fakeVacancies{},
+		health:    fakeHealth{},
+		jobHealth: fakeHealth{},
+		mail:      disabledMailer{},
+		limiter:   newRateLimiter(),
 	}
 	return app, users
+}
+
+// sessionCookie mints a valid access-token cookie the way issueTokens does,
+// so tests can reach authenticated handlers without a database.
+func sessionCookie(app *application, subject string) string {
+	now := time.Now().UTC()
+	claims := jwt.RegisteredClaims{
+		Issuer:    "workaly-auth",
+		Audience:  jwt.ClaimStrings{"workaly"},
+		Subject:   subject,
+		ExpiresAt: jwt.NewNumericDate(now.Add(time.Minute)),
+		IssuedAt:  jwt.NewNumericDate(now),
+	}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(app.cfg.JWTSecret)
+	if err != nil {
+		panic(err)
+	}
+	return "token=" + token
 }
 
 func post(app *application, path, body string) *httptest.ResponseRecorder {

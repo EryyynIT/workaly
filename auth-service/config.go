@@ -12,6 +12,7 @@ const requestTimeout = 5 * time.Second
 type config struct {
 	HTTPAddr        string
 	UserServiceAddr string
+	JobServiceAddr  string
 	JWTSecret       []byte
 	CookieSecure    bool
 	PublicOrigin    string
@@ -23,6 +24,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 	cfg := config{
 		HTTPAddr:        "127.0.0.1:8080",
 		UserServiceAddr: "127.0.0.1:50051",
+		JobServiceAddr:  "127.0.0.1:50052",
 		CookieSecure:    true,
 		PublicOrigin:    "http://127.0.0.1:8080",
 		JWTSecret:       []byte(getenv("JWT_SECRET")),
@@ -39,6 +41,9 @@ func loadConfig(getenv func(string) string) (config, error) {
 	}
 	if value := getenv("USER_SERVICE_ADDR"); value != "" {
 		cfg.UserServiceAddr = value
+	}
+	if value := getenv("JOB_SERVICE_ADDR"); value != "" {
+		cfg.JobServiceAddr = value
 	}
 	if value := getenv("COOKIE_SECURE"); value != "" {
 		secure, err := strconv.ParseBool(value)

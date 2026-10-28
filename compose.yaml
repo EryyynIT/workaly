@@ -85,6 +85,7 @@ services:
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://127.0.0.1:8080}
       HTTP_ADDR: 0.0.0.0:8080
       USER_SERVICE_ADDR: user-service:50051
+      JOB_SERVICE_ADDR: job-service:50052
       AUTH_DATABASE_URL: postgres://workaly_auth:local-development-only@auth-db:5432/workaly_auth?options=-c%20statement_timeout%3D3000
       DEV_MAIL_LOG: ${DEV_MAIL_LOG:-true}
       GIN_MODE: release
