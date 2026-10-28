@@ -7,6 +7,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"google.golang.org/grpc"
+
+	jobpb "github.com/EryyynIT/workaly/job-service/pb/jobpb"
+
 	"github.com/EryyynIT/workaly/catalogkit"
 )
 
@@ -40,5 +44,8 @@ func run() error {
 	defer cancelMonitor()
 	healthServer := catalogkit.MonitorHealth(monitorCtx, db, "job.JobService")
 
-	return catalogkit.Serve(ctx, cfg.GRPCAddr, healthServer, nil)
+	jobServer := &jobService{db: db}
+	return catalogkit.Serve(ctx, cfg.GRPCAddr, healthServer, func(server *grpc.Server) {
+		jobpb.RegisterJobServiceServer(server, jobServer)
+	})
 }
