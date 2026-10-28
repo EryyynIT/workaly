@@ -1,0 +1,120 @@
+syntax = "proto3";
+
+package job;
+
+option go_package = "github.com/EryyynIT/workaly/auth-service/pb/jobpb";
+
+import "google/protobuf/timestamp.proto";
+
+// Internal vacancy API. The HTTP edge (Auth) authenticates the browser and
+// translates the JWT subject into actor_user_id over this internal channel;
+// the service trusts the actor only from the request itself and never from
+// client input. Ownership is enforced here, in the data-owning service:
+// anything not owned by the actor is reported as not found so existence is
+// never disclosed.
+//
+// State machine: draft -> published -> closed. Closed is terminal in S2.
+// `version` starts at 1 and is bumped by every successful mutation of the
+// vacancy itself; update calls must carry the version the caller saw, a
+// mismatch is reported as FailedPrecondition so the edge maps it to 409.
+//
+// Money fields are decimal strings ("1234.50"); empty string means absent.
+service JobService {
+  // Creates a draft owned by the actor.
+  rpc CreateVacancy(CreateVacancyRequest) returns (Vacancy);
+  // Reads a vacancy: published ones for everyone, any status for the author.
+  rpc GetVacancy(GetVacancyRequest) returns (Vacancy);
+  // Replaces the editable fields of a draft or published vacancy. Closed
+  // vacancies are not editable.
+  rpc UpdateVacancy(UpdateVacancyRequest) returns (Vacancy);
+  // draft -> published.
+  rpc PublishVacancy(PublishVacancyRequest) returns (Vacancy);
+  // published -> closed.
+  rpc CloseVacancy(CloseVacancyRequest) returns (Vacancy);
+  // Lists the actor's own vacancies in every status, newest first.
+  rpc ListMyVacancies(ListMyVacanciesRequest) returns (ListMyVacanciesResponse);
+  // Deletes the actor's draft. Published and closed vacancies are history
+  // and cannot be deleted.
+  rpc DeleteDraft(DeleteDraftRequest) returns (Vacancy);
+}
+
+message Vacancy {
+  string id = 1;
+  string author_user_id = 2;
+  string title = 3;
+  string description = 4;
+  string employment_type = 5;   // full_time | part_time | contract | internship
+  string work_format = 6;       // onsite | remote | hybrid
+  string location = 7;          // "" when not set
+  string salary_min = 8;        // decimal string, "" when not set
+  string salary_max = 9;
+  string currency = 10;         // ISO 4217 alpha-3, required with any salary
+  string status = 11;           // draft | published | closed
+  int64 version = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+  google.protobuf.Timestamp published_at = 15;  // unset for drafts
+  google.protobuf.Timestamp closed_at = 16;     // unset until closed
+}
+
+message CreateVacancyRequest {
+  string actor_user_id = 1;
+  string title = 2;
+  string description = 3;
+  string employment_type = 4;
+  string work_format = 5;
+  string location = 6;
+  string salary_min = 7;
+  string salary_max = 8;
+  string currency = 9;
+}
+
+message GetVacancyRequest {
+  // May be empty for anonymous public reads; non-empty grants the author view.
+  string actor_user_id = 1;
+  string vacancy_id = 2;
+}
+
+message UpdateVacancyRequest {
+  string actor_user_id = 1;
+  string vacancy_id = 2;
+  // The version the caller last saw. Applies only if it still matches.
+  int64 version = 3;
+  string title = 4;
+  string description = 5;
+  string employment_type = 6;
+  string work_format = 7;
+  string location = 8;
+  string salary_min = 9;
+  string salary_max = 10;
+  string currency = 11;
+}
+
+message PublishVacancyRequest {
+  string actor_user_id = 1;
+  string vacancy_id = 2;
+}
+
+message CloseVacancyRequest {
+  string actor_user_id = 1;
+  string vacancy_id = 2;
+}
+
+message ListMyVacanciesRequest {
+  string actor_user_id = 1;
+  // Opaque cursor returned by the previous response; empty starts over.
+  string page_token = 2;
+  // 1..50; 0 selects the server default.
+  int32 page_size = 3;
+}
+
+message ListMyVacanciesResponse {
+  repeated Vacancy vacancies = 1;
+  // Empty when there are no more pages.
+  string next_page_token = 2;
+}
+
+message DeleteDraftRequest {
+  string actor_user_id = 1;
+  string vacancy_id = 2;
+}

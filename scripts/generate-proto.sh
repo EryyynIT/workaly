@@ -24,3 +24,20 @@ PATH="$GOBIN:$PATH" "$root/protoc/bin/protoc" -I contracts \
   --go_out=auth-service/pb/userpb --go_opt=paths=source_relative \
   --go-grpc_out=auth-service/pb/userpb --go-grpc_opt=paths=source_relative \
   contracts/user.proto
+
+# protoc does not create output directories.
+mkdir -p auth-service/pb/jobpb job-service/pb/jobpb
+PATH="$GOBIN:$PATH" "$root/protoc/bin/protoc" -I contracts \
+  --go_out=auth-service/pb/jobpb --go_opt=paths=source_relative \
+  --go-grpc_out=auth-service/pb/jobpb --go-grpc_opt=paths=source_relative \
+  contracts/job.proto
+
+# The job service owns the same contract in Go. A second copy inside its own
+# module keeps its image self-contained (no auth-service sources in the build);
+# the M override replaces go_package without touching the .proto.
+PATH="$GOBIN:$PATH" "$root/protoc/bin/protoc" -I contracts \
+  --go_out=job-service/pb/jobpb \
+  --go_opt=paths=source_relative,Mcontracts/job.proto=github.com/EryyynIT/workaly/job-service/pb/jobpb \
+  --go-grpc_out=job-service/pb/jobpb \
+  --go-grpc_opt=paths=source_relative,Mcontracts/job.proto=github.com/EryyynIT/workaly/job-service/pb/jobpb \
+  contracts/job.proto

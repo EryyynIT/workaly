@@ -85,9 +85,9 @@ jobs:
           go-version: '1.25.x'
           cache-dependency-path: auth-service/go.sum
       - run: bash scripts/generate-proto.sh
-      - run: git diff --exit-code -- auth-service/pb
+      - run: git diff --exit-code -- auth-service/pb job-service/pb
       - name: Reject untracked generated files
-        run: test -z "$(git ls-files --others --exclude-standard auth-service/pb)"
+        run: test -z "$(git ls-files --others --exclude-standard auth-service/pb job-service/pb)"
 
   integration:
     runs-on: ubuntu-latest
