@@ -113,6 +113,11 @@ services:
     depends_on:
       job-db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr", "127.0.0.1:50052"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
     restart: unless-stopped
 
   task-service:
@@ -126,6 +131,11 @@ services:
     depends_on:
       task-db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr", "127.0.0.1:50053"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
     restart: unless-stopped
 
 volumes:
