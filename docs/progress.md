@@ -294,6 +294,13 @@ S2.2: вакансии — CRUD автора, publish/close, optimistic-верс
   volume'ы job-data/task-data; БД и gRPC не публикуются на хост.
 - `ci.yaml`: джобы job и task (gofmt, `go test -race`, vet).
 - `development.md`: строки конфигурации Job/Task; механизм миграций уточнён.
+- Healthcheck job/task: grpc-health-probe (v0.4.55, в образе) против
+  стандартного gRPC health; compose `--wait` в CI теперь ждёт готовности
+  каталогов.
+- `scripts/check-schema.sh`: пробы схемы каталогов в CI-интеграции — плохие
+  вставки обязаны падать с именованным ограничением, отзыв и повторный
+  отклик обязаны проходить; перезапуски безопасны (пробные данные
+  удаляются перед прогоном).
 
 ### Подтверждено локально
 
@@ -303,6 +310,9 @@ S2.2: вакансии — CRUD автора, publish/close, optimistic-верс
 - Правила схемы вживую: неверные employment_type/валюта/бюджет и min > max
   отброшены CHECK; повторный активный отклик и предложение — unique
   violation; после отзыва повторный отклик возможен.
+- check-schema дважды подряд PASS (идемпотентность к перезапускам).
+- Health job-service: unhealthy при остановке job-db, healthy после
+  возврата (probe внутри контейнера отвечает NOT_SERVING сразу).
 
 ### Незавершённое
 
