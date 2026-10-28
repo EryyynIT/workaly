@@ -1,6 +1,8 @@
 FROM golang:1.25-alpine AS builder
 WORKDIR /app
 COPY task-service/go.mod task-service/go.sum ./
+# Shared plumbing module resolves via the replace directive to ../catalogkit.
+COPY catalogkit/ /catalogkit/
 RUN go mod download
 # Probe is independent of service sources: cached until the pin changes,
 # and kept out of the builder's last layer. GOSUMDB=off matches the local

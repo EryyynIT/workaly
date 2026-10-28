@@ -34,6 +34,20 @@ jobs:
       - run: cargo test --locked --manifest-path user-service/Cargo.toml
       - run: cargo clippy --locked --manifest-path user-service/Cargo.toml --all-targets -- -D warnings
 
+  catalogkit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache-dependency-path: catalogkit/go.sum
+      - run: test -z "$(gofmt -l catalogkit)"
+      - run: go test -race ./...
+        working-directory: catalogkit
+      - run: go vet ./...
+        working-directory: catalogkit
+
   job:
     runs-on: ubuntu-latest
     steps:

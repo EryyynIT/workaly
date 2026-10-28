@@ -1,26 +1,26 @@
-package main
+package catalogkit
 
 import "testing"
 
 func TestLoadConfig(t *testing.T) {
 	getenv := func(key string) string {
 		if key == "DATABASE_URL" {
-			return "postgres://localhost:5432/workaly_task"
+			return "postgres://localhost:5432/workaly_job"
 		}
 		return ""
 	}
-	cfg, err := loadConfig(getenv)
+	cfg, err := LoadConfig(getenv, "127.0.0.1:50052")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.GRPCAddr != "127.0.0.1:50053" {
+	if cfg.GRPCAddr != "127.0.0.1:50052" {
 		t.Fatalf("default GRPCAddr = %q", cfg.GRPCAddr)
 	}
-	if cfg.DatabaseURL != "postgres://localhost:5432/workaly_task" {
+	if cfg.DatabaseURL != "postgres://localhost:5432/workaly_job" {
 		t.Fatalf("DatabaseURL = %q", cfg.DatabaseURL)
 	}
 
-	if _, err := loadConfig(func(string) string { return "" }); err == nil {
+	if _, err := LoadConfig(func(string) string { return "" }, "127.0.0.1:50052"); err == nil {
 		t.Fatal("expected error without DATABASE_URL")
 	}
 
@@ -33,7 +33,7 @@ func TestLoadConfig(t *testing.T) {
 		}
 		return ""
 	}
-	cfg, err = loadConfig(getenv)
+	cfg, err = LoadConfig(getenv, "127.0.0.1:50053")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
