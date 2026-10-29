@@ -26,7 +26,7 @@ PATH="$GOBIN:$PATH" "$root/protoc/bin/protoc" -I contracts \
   contracts/user.proto
 
 # protoc does not create output directories.
-mkdir -p auth-service/pb/jobpb job-service/pb/jobpb
+mkdir -p auth-service/pb/jobpb job-service/pb/jobpb auth-service/pb/taskpb task-service/pb/taskpb
 PATH="$GOBIN:$PATH" "$root/protoc/bin/protoc" -I contracts \
   --go_out=auth-service/pb/jobpb --go_opt=paths=source_relative \
   --go-grpc_out=auth-service/pb/jobpb --go-grpc_opt=paths=source_relative \
@@ -41,3 +41,16 @@ PATH="$GOBIN:$PATH" "$root/protoc/bin/protoc" -I contracts \
   --go-grpc_out=job-service/pb/jobpb \
   --go-grpc_opt=paths=source_relative,Mcontracts/job.proto=github.com/EryyynIT/workaly/job-service/pb/jobpb \
   contracts/job.proto
+
+# The task contract mirrors job.proto for the order domain. Same two-copy
+# layout: the edge module and the owning service module each carry the pb.
+PATH="$GOBIN:$PATH" "$root/protoc/bin/protoc" -I contracts \
+  --go_out=auth-service/pb/taskpb --go_opt=paths=source_relative \
+  --go-grpc_out=auth-service/pb/taskpb --go-grpc_opt=paths=source_relative \
+  contracts/task.proto
+PATH="$GOBIN:$PATH" "$root/protoc/bin/protoc" -I contracts \
+  --go_out=task-service/pb/taskpb \
+  --go_opt=paths=source_relative,Mcontracts/task.proto=github.com/EryyynIT/workaly/task-service/pb/taskpb \
+  --go-grpc_out=task-service/pb/taskpb \
+  --go-grpc_opt=paths=source_relative,Mcontracts/task.proto=github.com/EryyynIT/workaly/task-service/pb/taskpb \
+  contracts/task.proto

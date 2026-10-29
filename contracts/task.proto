@@ -1,0 +1,178 @@
+syntax = "proto3";
+
+package task;
+
+option go_package = "github.com/EryyynIT/workaly/auth-service/pb/taskpb";
+
+import "google/protobuf/timestamp.proto";
+
+// Internal order API. The HTTP edge (Auth) authenticates the browser and
+// translates the JWT subject into actor_user_id over this internal channel;
+// the service trusts the actor only from the request itself and never from
+// client input. Ownership is enforced here, in the data-owning service:
+// anything not owned by the actor is reported as not found so existence is
+// never disclosed.
+//
+// State machine: draft -> published -> closed. Closed is terminal in S2.
+// `version` starts at 1 and is bumped by every successful mutation of the
+// order itself; update calls must carry the version the caller saw, a
+// mismatch is reported as FailedPrecondition so the edge maps it to 409.
+//
+// Money fields are decimal strings ("1234.50"); empty string means absent.
+// Dates are ISO 8601 ("2026-12-31"); empty string means absent.
+service TaskService {
+  // Creates a draft owned by the actor.
+  rpc CreateOrder(CreateOrderRequest) returns (Order);
+  // Reads an order: published ones for everyone, any status for the author.
+  rpc GetOrder(GetOrderRequest) returns (Order);
+  // Replaces the editable fields of a draft or published order. Closed
+  // orders are not editable.
+  rpc UpdateOrder(UpdateOrderRequest) returns (Order);
+  // draft -> published.
+  rpc PublishOrder(PublishOrderRequest) returns (Order);
+  // published -> closed.
+  rpc CloseOrder(CloseOrderRequest) returns (Order);
+  // Lists the actor's own orders in every status, newest first.
+  rpc ListMyOrders(ListMyOrdersRequest) returns (ListMyOrdersResponse);
+  // Deletes the actor's draft. Published and closed orders are history
+  // and cannot be deleted.
+  rpc DeleteDraft(DeleteDraftRequest) returns (Order);
+  // Records the actor's proposal for a published order. The order author
+  // can never propose for their own order, and there is at most one active
+  // proposal per (order, actor) pair: a repeat is reported as
+  // AlreadyExists so the edge maps it to 409.
+  rpc CreateOrderProposal(CreateOrderProposalRequest) returns (OrderProposal);
+  // Lists the proposals of an order. Author-only: the order must belong
+  // to the actor, anything else is reported as not found.
+  rpc ListOrderProposals(ListOrderProposalsRequest) returns (ListOrderProposalsResponse);
+  // Soft-withdraws the actor's own active proposal; after withdrawal a new
+  // proposal is allowed. Withdrawing a withdrawn proposal is reported as
+  // FailedPrecondition so the edge maps it to 409.
+  rpc WithdrawOrderProposal(WithdrawOrderProposalRequest) returns (OrderProposal);
+  // Reads the actor's own active proposal for an order.
+  rpc GetMyOrderProposal(GetMyOrderProposalRequest) returns (OrderProposal);
+}
+
+message Order {
+  string id = 1;
+  string author_user_id = 2;
+  string title = 3;
+  string description = 4;
+  string budget_type = 5;       // fixed | hourly
+  string budget_amount = 6;     // decimal string, always > 0
+  string currency = 7;          // ISO 4217 alpha-3
+  string deadline = 8;          // ISO date, "" when not set
+  string status = 9;            // draft | published | closed
+  int64 version = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+  google.protobuf.Timestamp published_at = 13;  // unset for drafts
+  google.protobuf.Timestamp closed_at = 14;     // unset until closed
+}
+
+message CreateOrderRequest {
+  string actor_user_id = 1;
+  string title = 2;
+  string description = 3;
+  string budget_type = 4;
+  string budget_amount = 5;
+  string currency = 6;
+  string deadline = 7;
+}
+
+message GetOrderRequest {
+  // May be empty for anonymous public reads; non-empty grants the author view.
+  string actor_user_id = 1;
+  string order_id = 2;
+}
+
+message UpdateOrderRequest {
+  string actor_user_id = 1;
+  string order_id = 2;
+  // The version the caller last saw. Applies only if it still matches.
+  int64 version = 3;
+  string title = 4;
+  string description = 5;
+  string budget_type = 6;
+  string budget_amount = 7;
+  string currency = 8;
+  string deadline = 9;
+}
+
+message PublishOrderRequest {
+  string actor_user_id = 1;
+  string order_id = 2;
+}
+
+message CloseOrderRequest {
+  string actor_user_id = 1;
+  string order_id = 2;
+}
+
+message ListMyOrdersRequest {
+  string actor_user_id = 1;
+  // Opaque cursor returned by the previous response; empty starts over.
+  string page_token = 2;
+  // 1..50; 0 selects the server default.
+  int32 page_size = 3;
+}
+
+message ListMyOrdersResponse {
+  repeated Order orders = 1;
+  // Empty when there are no more pages.
+  string next_page_token = 2;
+}
+
+message DeleteDraftRequest {
+  string actor_user_id = 1;
+  string order_id = 2;
+}
+
+// OrderProposal is the executor's offer and the draft of the deal terms
+// confirmed later in S3; which fields of it a caller may see is decided by
+// the HTTP edge, never by this contract.
+message OrderProposal {
+  string id = 1;
+  string order_id = 2;
+  string executor_user_id = 3;
+  string message = 4;
+  string proposed_amount = 5;     // decimal string, always > 0
+  string currency = 6;            // ISO 4217 alpha-3
+  string proposed_deadline = 7;   // ISO date, "" when not set
+  string status = 8;              // active | withdrawn
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp withdrawn_at = 10;  // unset while active
+}
+
+message CreateOrderProposalRequest {
+  string actor_user_id = 1;
+  string order_id = 2;
+  string message = 3;
+  string proposed_amount = 4;
+  string currency = 5;
+  string proposed_deadline = 6;
+}
+
+message ListOrderProposalsRequest {
+  string actor_user_id = 1;
+  string order_id = 2;
+  string page_token = 3;
+  // 1..50; 0 selects the server default.
+  int32 page_size = 4;
+}
+
+message ListOrderProposalsResponse {
+  repeated OrderProposal proposals = 1;
+  string next_page_token = 2;
+}
+
+message WithdrawOrderProposalRequest {
+  string actor_user_id = 1;
+  string order_id = 2;
+  string proposal_id = 3;
+}
+
+message GetMyOrderProposalRequest {
+  string actor_user_id = 1;
+  string order_id = 2;
+}

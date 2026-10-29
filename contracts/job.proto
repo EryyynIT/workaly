@@ -36,6 +36,66 @@ service JobService {
   // Deletes the actor's draft. Published and closed vacancies are history
   // and cannot be deleted.
   rpc DeleteDraft(DeleteDraftRequest) returns (Vacancy);
+  // Records the actor's response to a published vacancy. The vacancy author
+  // can never respond to their own vacancy, and there is at most one active
+  // response per (vacancy, actor) pair: a repeat is reported as
+  // AlreadyExists so the edge maps it to 409.
+  rpc CreateVacancyResponse(CreateVacancyResponseRequest) returns (VacancyResponse);
+  // Lists the responses of a vacancy. Author-only: the vacancy must belong
+  // to the actor, anything else is reported as not found.
+  rpc ListVacancyResponses(ListVacancyResponsesRequest) returns (ListVacancyResponsesResponse);
+  // Soft-withdraws the actor's own active response; after withdrawal a new
+  // response is allowed. Withdrawing a withdrawn response is reported as
+  // FailedPrecondition so the edge maps it to 409.
+  rpc WithdrawVacancyResponse(WithdrawVacancyResponseRequest) returns (VacancyResponse);
+  // Reads the actor's own active response to a vacancy.
+  rpc GetMyVacancyResponse(GetMyVacancyResponseRequest) returns (VacancyResponse);
+}
+
+// VacancyResponse is the full response record; which fields of it a caller
+// may see is decided by the HTTP edge, never by this contract.
+message VacancyResponse {
+  string id = 1;
+  string vacancy_id = 2;
+  string candidate_user_id = 3;
+  string cover_letter = 4;
+  string contact = 5;  // "" when not given
+  string status = 6;   // active | withdrawn
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp withdrawn_at = 8;  // unset while active
+}
+
+message CreateVacancyResponseRequest {
+  string actor_user_id = 1;
+  string vacancy_id = 2;
+  string cover_letter = 3;
+  // The candidate's optional contact channel. It travels with the response
+  // and is visible to the vacancy author only.
+  string contact = 4;
+}
+
+message ListVacancyResponsesRequest {
+  string actor_user_id = 1;
+  string vacancy_id = 2;
+  string page_token = 3;
+  // 1..50; 0 selects the server default.
+  int32 page_size = 4;
+}
+
+message ListVacancyResponsesResponse {
+  repeated VacancyResponse responses = 1;
+  string next_page_token = 2;
+}
+
+message WithdrawVacancyResponseRequest {
+  string actor_user_id = 1;
+  string vacancy_id = 2;
+  string response_id = 3;
+}
+
+message GetMyVacancyResponseRequest {
+  string actor_user_id = 1;
+  string vacancy_id = 2;
 }
 
 message Vacancy {

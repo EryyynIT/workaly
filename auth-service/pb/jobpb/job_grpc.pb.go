@@ -19,13 +19,17 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	JobService_CreateVacancy_FullMethodName   = "/job.JobService/CreateVacancy"
-	JobService_GetVacancy_FullMethodName      = "/job.JobService/GetVacancy"
-	JobService_UpdateVacancy_FullMethodName   = "/job.JobService/UpdateVacancy"
-	JobService_PublishVacancy_FullMethodName  = "/job.JobService/PublishVacancy"
-	JobService_CloseVacancy_FullMethodName    = "/job.JobService/CloseVacancy"
-	JobService_ListMyVacancies_FullMethodName = "/job.JobService/ListMyVacancies"
-	JobService_DeleteDraft_FullMethodName     = "/job.JobService/DeleteDraft"
+	JobService_CreateVacancy_FullMethodName           = "/job.JobService/CreateVacancy"
+	JobService_GetVacancy_FullMethodName              = "/job.JobService/GetVacancy"
+	JobService_UpdateVacancy_FullMethodName           = "/job.JobService/UpdateVacancy"
+	JobService_PublishVacancy_FullMethodName          = "/job.JobService/PublishVacancy"
+	JobService_CloseVacancy_FullMethodName            = "/job.JobService/CloseVacancy"
+	JobService_ListMyVacancies_FullMethodName         = "/job.JobService/ListMyVacancies"
+	JobService_DeleteDraft_FullMethodName             = "/job.JobService/DeleteDraft"
+	JobService_CreateVacancyResponse_FullMethodName   = "/job.JobService/CreateVacancyResponse"
+	JobService_ListVacancyResponses_FullMethodName    = "/job.JobService/ListVacancyResponses"
+	JobService_WithdrawVacancyResponse_FullMethodName = "/job.JobService/WithdrawVacancyResponse"
+	JobService_GetMyVacancyResponse_FullMethodName    = "/job.JobService/GetMyVacancyResponse"
 )
 
 // JobServiceClient is the client API for JobService service.
@@ -62,6 +66,20 @@ type JobServiceClient interface {
 	// Deletes the actor's draft. Published and closed vacancies are history
 	// and cannot be deleted.
 	DeleteDraft(ctx context.Context, in *DeleteDraftRequest, opts ...grpc.CallOption) (*Vacancy, error)
+	// Records the actor's response to a published vacancy. The vacancy author
+	// can never respond to their own vacancy, and there is at most one active
+	// response per (vacancy, actor) pair: a repeat is reported as
+	// AlreadyExists so the edge maps it to 409.
+	CreateVacancyResponse(ctx context.Context, in *CreateVacancyResponseRequest, opts ...grpc.CallOption) (*VacancyResponse, error)
+	// Lists the responses of a vacancy. Author-only: the vacancy must belong
+	// to the actor, anything else is reported as not found.
+	ListVacancyResponses(ctx context.Context, in *ListVacancyResponsesRequest, opts ...grpc.CallOption) (*ListVacancyResponsesResponse, error)
+	// Soft-withdraws the actor's own active response; after withdrawal a new
+	// response is allowed. Withdrawing a withdrawn response is reported as
+	// FailedPrecondition so the edge maps it to 409.
+	WithdrawVacancyResponse(ctx context.Context, in *WithdrawVacancyResponseRequest, opts ...grpc.CallOption) (*VacancyResponse, error)
+	// Reads the actor's own active response to a vacancy.
+	GetMyVacancyResponse(ctx context.Context, in *GetMyVacancyResponseRequest, opts ...grpc.CallOption) (*VacancyResponse, error)
 }
 
 type jobServiceClient struct {
@@ -142,6 +160,46 @@ func (c *jobServiceClient) DeleteDraft(ctx context.Context, in *DeleteDraftReque
 	return out, nil
 }
 
+func (c *jobServiceClient) CreateVacancyResponse(ctx context.Context, in *CreateVacancyResponseRequest, opts ...grpc.CallOption) (*VacancyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VacancyResponse)
+	err := c.cc.Invoke(ctx, JobService_CreateVacancyResponse_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobServiceClient) ListVacancyResponses(ctx context.Context, in *ListVacancyResponsesRequest, opts ...grpc.CallOption) (*ListVacancyResponsesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListVacancyResponsesResponse)
+	err := c.cc.Invoke(ctx, JobService_ListVacancyResponses_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobServiceClient) WithdrawVacancyResponse(ctx context.Context, in *WithdrawVacancyResponseRequest, opts ...grpc.CallOption) (*VacancyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VacancyResponse)
+	err := c.cc.Invoke(ctx, JobService_WithdrawVacancyResponse_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobServiceClient) GetMyVacancyResponse(ctx context.Context, in *GetMyVacancyResponseRequest, opts ...grpc.CallOption) (*VacancyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VacancyResponse)
+	err := c.cc.Invoke(ctx, JobService_GetMyVacancyResponse_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // JobServiceServer is the server API for JobService service.
 // All implementations must embed UnimplementedJobServiceServer
 // for forward compatibility.
@@ -176,6 +234,20 @@ type JobServiceServer interface {
 	// Deletes the actor's draft. Published and closed vacancies are history
 	// and cannot be deleted.
 	DeleteDraft(context.Context, *DeleteDraftRequest) (*Vacancy, error)
+	// Records the actor's response to a published vacancy. The vacancy author
+	// can never respond to their own vacancy, and there is at most one active
+	// response per (vacancy, actor) pair: a repeat is reported as
+	// AlreadyExists so the edge maps it to 409.
+	CreateVacancyResponse(context.Context, *CreateVacancyResponseRequest) (*VacancyResponse, error)
+	// Lists the responses of a vacancy. Author-only: the vacancy must belong
+	// to the actor, anything else is reported as not found.
+	ListVacancyResponses(context.Context, *ListVacancyResponsesRequest) (*ListVacancyResponsesResponse, error)
+	// Soft-withdraws the actor's own active response; after withdrawal a new
+	// response is allowed. Withdrawing a withdrawn response is reported as
+	// FailedPrecondition so the edge maps it to 409.
+	WithdrawVacancyResponse(context.Context, *WithdrawVacancyResponseRequest) (*VacancyResponse, error)
+	// Reads the actor's own active response to a vacancy.
+	GetMyVacancyResponse(context.Context, *GetMyVacancyResponseRequest) (*VacancyResponse, error)
 	mustEmbedUnimplementedJobServiceServer()
 }
 
@@ -206,6 +278,18 @@ func (UnimplementedJobServiceServer) ListMyVacancies(context.Context, *ListMyVac
 }
 func (UnimplementedJobServiceServer) DeleteDraft(context.Context, *DeleteDraftRequest) (*Vacancy, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteDraft not implemented")
+}
+func (UnimplementedJobServiceServer) CreateVacancyResponse(context.Context, *CreateVacancyResponseRequest) (*VacancyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateVacancyResponse not implemented")
+}
+func (UnimplementedJobServiceServer) ListVacancyResponses(context.Context, *ListVacancyResponsesRequest) (*ListVacancyResponsesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListVacancyResponses not implemented")
+}
+func (UnimplementedJobServiceServer) WithdrawVacancyResponse(context.Context, *WithdrawVacancyResponseRequest) (*VacancyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method WithdrawVacancyResponse not implemented")
+}
+func (UnimplementedJobServiceServer) GetMyVacancyResponse(context.Context, *GetMyVacancyResponseRequest) (*VacancyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMyVacancyResponse not implemented")
 }
 func (UnimplementedJobServiceServer) mustEmbedUnimplementedJobServiceServer() {}
 func (UnimplementedJobServiceServer) testEmbeddedByValue()                    {}
@@ -354,6 +438,78 @@ func _JobService_DeleteDraft_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _JobService_CreateVacancyResponse_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateVacancyResponseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobServiceServer).CreateVacancyResponse(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobService_CreateVacancyResponse_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobServiceServer).CreateVacancyResponse(ctx, req.(*CreateVacancyResponseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobService_ListVacancyResponses_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListVacancyResponsesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobServiceServer).ListVacancyResponses(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobService_ListVacancyResponses_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobServiceServer).ListVacancyResponses(ctx, req.(*ListVacancyResponsesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobService_WithdrawVacancyResponse_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WithdrawVacancyResponseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobServiceServer).WithdrawVacancyResponse(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobService_WithdrawVacancyResponse_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobServiceServer).WithdrawVacancyResponse(ctx, req.(*WithdrawVacancyResponseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobService_GetMyVacancyResponse_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMyVacancyResponseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobServiceServer).GetMyVacancyResponse(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobService_GetMyVacancyResponse_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobServiceServer).GetMyVacancyResponse(ctx, req.(*GetMyVacancyResponseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // JobService_ServiceDesc is the grpc.ServiceDesc for JobService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -388,6 +544,22 @@ var JobService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteDraft",
 			Handler:    _JobService_DeleteDraft_Handler,
+		},
+		{
+			MethodName: "CreateVacancyResponse",
+			Handler:    _JobService_CreateVacancyResponse_Handler,
+		},
+		{
+			MethodName: "ListVacancyResponses",
+			Handler:    _JobService_ListVacancyResponses_Handler,
+		},
+		{
+			MethodName: "WithdrawVacancyResponse",
+			Handler:    _JobService_WithdrawVacancyResponse_Handler,
+		},
+		{
+			MethodName: "GetMyVacancyResponse",
+			Handler:    _JobService_GetMyVacancyResponse_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
