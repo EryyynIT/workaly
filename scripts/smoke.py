@@ -164,6 +164,146 @@ def vacancy_flow():
     print("PASS: vacancy author flow — draft, validation, email gate, optimistic version, publish, visibility, close, delete")
 
 
+def response_flow():
+    """The candidate side: respond, one active response, withdraw, respond again."""
+    # An author with a confirmed email publishes a vacancy.
+    author_email, author, _ = register_account("smoke-author2")
+    code, _, draft = request("/vacancies", vacancy_fields("Смоук-вакансия для откликов"), cookie=author)
+    assert code == 201, (code, draft)
+    vacancy_id = draft["id"]
+    assert request("/verify-email", {"token": dev_verify_token(author_email)})[0] == 200
+    code, _, body = request(f"/vacancies/{vacancy_id}/publish", cookie=author, method="POST")
+    assert code == 200 and body["status"] == "published", (code, body)
+
+    # Responding without a session or without a confirmed email is refused.
+    code, _, body = request(f"/vacancies/{vacancy_id}/responses", {"cover_letter": "Здравствуйте!"})
+    assert code == 401, (code, body)
+    candidate_email, candidate, candidate_id = register_account("smoke-candidate")
+    code, _, body = request(f"/vacancies/{vacancy_id}/responses", {"cover_letter": "Здравствуйте!"}, cookie=candidate)
+    assert code == 403 and body == {"error": "email_not_verified"}, (code, body)
+    assert request("/verify-email", {"token": dev_verify_token(candidate_email)})[0] == 200
+
+    # A draft is not open for responses and its existence stays undisclosed.
+    code, _, other_draft = request("/vacancies", vacancy_fields("Черновик без откликов"), cookie=author)
+    assert code == 201, (code, other_draft)
+    code, _, body = request(f"/vacancies/{other_draft['id']}/responses", {"cover_letter": "hi"}, cookie=candidate)
+    assert code == 404, (code, body)
+
+    # The candidate responds with a contact channel; a repeat is a 409.
+    reply = {"cover_letter": "Пять лет Go, профиль по ссылке.", "contact": "@smoke-candidate"}
+    code, _, resp = request(f"/vacancies/{vacancy_id}/responses", reply, cookie=candidate)
+    assert code == 201 and resp["status"] == "active" and resp["contact"] == "@smoke-candidate", (code, resp)
+    assert resp["candidate_user_id"] == candidate_id, resp
+    code, _, body = request(f"/vacancies/{vacancy_id}/responses", reply, cookie=candidate)
+    assert code == 409 and "active response" in body["error"], (code, body)
+
+    # The author reads the responses including the contact; a stranger gets 404.
+    code, _, body = request(f"/vacancies/{vacancy_id}/responses", cookie=author)
+    assert code == 200 and len(body["responses"]) == 1, (code, body)
+    assert body["responses"][0]["contact"] == "@smoke-candidate", body
+    _, stranger, _ = register_account("smoke-stranger2")
+    assert request(f"/vacancies/{vacancy_id}/responses", cookie=stranger)[0] == 404
+    # No leak through the public vacancy view or the anonymous surface.
+    assert "contact" not in json.dumps(request(f"/vacancies/{vacancy_id}")[2])
+    assert request(f"/vacancies/{vacancy_id}/responses")[0] == 401
+
+    # The candidate reads their own response; the author has none of their own.
+    code, _, mine = request(f"/vacancies/{vacancy_id}/responses/mine", cookie=candidate)
+    assert code == 200 and mine["id"] == resp["id"], (code, mine)
+    assert request(f"/vacancies/{vacancy_id}/responses/mine", cookie=author)[0] == 404
+
+    # Withdraw: stranger 404, double withdraw 409, afterwards responding again works.
+    assert request(f"/vacancies/{vacancy_id}/responses/{resp['id']}/withdraw", cookie=stranger, method="POST")[0] == 404
+    code, _, body = request(f"/vacancies/{vacancy_id}/responses/{resp['id']}/withdraw", cookie=candidate, method="POST")
+    assert code == 200 and body["status"] == "withdrawn" and body["withdrawn_at"], (code, body)
+    code, _, body = request(f"/vacancies/{vacancy_id}/responses/{resp['id']}/withdraw", cookie=candidate, method="POST")
+    assert code == 409 and "already withdrawn" in body["error"], (code, body)
+    assert request(f"/vacancies/{vacancy_id}/responses/mine", cookie=candidate)[0] == 404
+    code, _, again = request(f"/vacancies/{vacancy_id}/responses", reply, cookie=candidate)
+    assert code == 201 and again["status"] == "active" and again["id"] != resp["id"], (code, again)
+    code, _, body = request(f"/vacancies/{vacancy_id}/responses", cookie=author)
+    assert code == 200 and len(body["responses"]) == 2, (code, body)
+
+    print("PASS: vacancy response flow — email gate, contact to author only, one active response, withdraw, respond again")
+
+
+def order_fields(title):
+    return {
+        "title": title,
+        "description": "Одностраничный сайт с формой заказа и оплатой.",
+        "budget_type": "fixed",
+        "budget_amount": "120000",
+        "currency": "RUB",
+        "deadline": "2026-12-31",
+    }
+
+
+def order_flow():
+    """The order side: author CRUD and the executor's proposal flow."""
+    customer_email, customer, _ = register_account("smoke-customer")
+    code, _, draft = request("/orders", order_fields("Лендинг для кофейни"), cookie=customer)
+    assert code == 201 and draft["status"] == "draft" and draft["budget_amount"] == "120000.00", (code, draft)
+    order_id = draft["id"]
+
+    # Validation stays precise; publishing requires a confirmed email.
+    code, _, body = request("/orders", {**order_fields("x"), "budget_amount": "0"}, cookie=customer)
+    assert code == 400 and "budget_amount" in body["error"], (code, body)
+    code, _, body = request(f"/orders/{order_id}/publish", cookie=customer, method="POST")
+    assert code == 403 and body == {"error": "email_not_verified"}, (code, body)
+    assert request("/verify-email", {"token": dev_verify_token(customer_email)})[0] == 200
+
+    # Optimistic version, then publish; drafts stay invisible to the public.
+    stale = {**order_fields("Обновлённый заказ"), "version": 99}
+    code, _, body = request(f"/orders/{order_id}", stale, cookie=customer, method="PATCH")
+    assert code == 409 and "changed since you last read it" in body["error"], (code, body)
+    code, _, body = request(f"/orders/{order_id}", {**order_fields("Обновлённый заказ"), "version": 1}, cookie=customer, method="PATCH")
+    assert code == 200 and body["version"] == 2, (code, body)
+    assert request(f"/orders/{order_id}")[0] == 404, "draft must not be public"
+    code, _, body = request(f"/orders/{order_id}/publish", cookie=customer, method="POST")
+    assert code == 200 and body["status"] == "published" and body["published_at"], (code, body)
+    assert request(f"/orders/{order_id}")[0] == 200, "published order must be public"
+
+    # The executor proposes; email gate, then one active proposal per order.
+    executor_email, executor, executor_id = register_account("smoke-executor")
+    proposal = {"message": "Сделаю за неделю, примеры в профиле.", "proposed_amount": "90000", "currency": "RUB"}
+    code, _, body = request(f"/orders/{order_id}/proposals", proposal, cookie=executor)
+    assert code == 403 and body == {"error": "email_not_verified"}, (code, body)
+    assert request("/verify-email", {"token": dev_verify_token(executor_email)})[0] == 200
+    code, _, prop = request(f"/orders/{order_id}/proposals", proposal, cookie=executor)
+    assert code == 201 and prop["status"] == "active" and prop["proposed_amount"] == "90000.00", (code, prop)
+    assert prop["executor_user_id"] == executor_id, prop
+    code, _, body = request(f"/orders/{order_id}/proposals", proposal, cookie=executor)
+    assert code == 409 and "active proposal" in body["error"], (code, body)
+
+    # The author reads the proposals; a stranger and the anonymous get 404/401.
+    code, _, body = request(f"/orders/{order_id}/proposals", cookie=customer)
+    assert code == 200 and len(body["proposals"]) == 1, (code, body)
+    _, stranger, _ = register_account("smoke-stranger3")
+    assert request(f"/orders/{order_id}/proposals", cookie=stranger)[0] == 404
+    assert request(f"/orders/{order_id}/proposals")[0] == 401
+    # Proposals never leak into the public order view.
+    assert "proposals" not in json.dumps(request(f"/orders/{order_id}")[2])
+
+    # Withdraw: stranger 404, double withdraw 409, afterwards proposing again works.
+    assert request(f"/orders/{order_id}/proposals/{prop['id']}/withdraw", cookie=stranger, method="POST")[0] == 404
+    code, _, body = request(f"/orders/{order_id}/proposals/{prop['id']}/withdraw", cookie=executor, method="POST")
+    assert code == 200 and body["status"] == "withdrawn" and body["withdrawn_at"], (code, body)
+    code, _, body = request(f"/orders/{order_id}/proposals/{prop['id']}/withdraw", cookie=executor, method="POST")
+    assert code == 409 and "already withdrawn" in body["error"], (code, body)
+    assert request(f"/orders/{order_id}/proposals/mine", cookie=executor)[0] == 404
+    code, _, again = request(f"/orders/{order_id}/proposals", proposal, cookie=executor)
+    assert code == 201 and again["id"] != prop["id"], (code, again)
+
+    # Close is terminal; own list shows every status.
+    code, _, body = request(f"/orders/{order_id}/close", cookie=customer, method="POST")
+    assert code == 200 and body["status"] == "closed", (code, body)
+    assert request(f"/orders/{order_id}")[0] == 404, "closed order must not be public"
+    code, _, body = request("/my/orders", cookie=customer)
+    assert code == 200 and [o["id"] for o in body["orders"]] == [order_id], (code, body)
+
+    print("PASS: order flow — author CRUD, email gate, optimistic version, one active proposal, withdraw, close")
+
+
 def main():
     if sys.argv[1:] == ["--expect-unavailable"]:
         wait_status("/readyz", 503)
@@ -251,6 +391,8 @@ def main():
     assert code == 401, code
 
     vacancy_flow()
+    response_flow()
+    order_flow()
 
     print("PASS: readiness, registration, stable identity, cookie, duplicate, login, invalid credentials, validation, public profile, own sessions, refresh, logout")
 
