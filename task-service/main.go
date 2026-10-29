@@ -7,7 +7,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"google.golang.org/grpc"
+
 	"github.com/EryyynIT/workaly/catalogkit"
+	taskpb "github.com/EryyynIT/workaly/task-service/pb/taskpb"
 )
 
 func main() {
@@ -40,5 +43,8 @@ func run() error {
 	defer cancelMonitor()
 	healthServer := catalogkit.MonitorHealth(monitorCtx, db, "task.TaskService")
 
-	return catalogkit.Serve(ctx, cfg.GRPCAddr, healthServer, nil)
+	taskServer := &taskService{db: db}
+	return catalogkit.Serve(ctx, cfg.GRPCAddr, healthServer, func(server *grpc.Server) {
+		taskpb.RegisterTaskServiceServer(server, taskServer)
+	})
 }
