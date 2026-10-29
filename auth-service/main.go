@@ -11,6 +11,7 @@ import (
 	"time"
 
 	jobpb "github.com/EryyynIT/workaly/auth-service/pb/jobpb"
+	taskpb "github.com/EryyynIT/workaly/auth-service/pb/taskpb"
 	pb "github.com/EryyynIT/workaly/auth-service/pb/userpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -49,15 +50,22 @@ func run() error {
 		return err
 	}
 	defer jobConn.Close()
+	taskConn, err := grpc.NewClient(cfg.TaskServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return err
+	}
+	defer taskConn.Close()
 	app := &application{
-		cfg:       cfg,
-		db:        db,
-		users:     pb.NewUserServiceClient(userConn),
-		vacancies: jobpb.NewJobServiceClient(jobConn),
-		health:    healthpb.NewHealthClient(userConn),
-		jobHealth: healthpb.NewHealthClient(jobConn),
-		mail:      mailerFromEnv(),
-		limiter:   newRateLimiter(),
+		cfg:        cfg,
+		db:         db,
+		users:      pb.NewUserServiceClient(userConn),
+		vacancies:  jobpb.NewJobServiceClient(jobConn),
+		orders:     taskpb.NewTaskServiceClient(taskConn),
+		health:     healthpb.NewHealthClient(userConn),
+		jobHealth:  healthpb.NewHealthClient(jobConn),
+		taskHealth: healthpb.NewHealthClient(taskConn),
+		mail:       mailerFromEnv(),
+		limiter:    newRateLimiter(),
 	}
 	app.startProfileRetryWorker(context.Background())
 	server := &http.Server{

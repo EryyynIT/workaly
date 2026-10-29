@@ -64,12 +64,14 @@ func testApp() (*application, *fakeUsers) {
 			PublicOrigin: "https://workaly.example",
 			CookieSecure: true,
 		},
-		users:     users,
-		vacancies: &fakeVacancies{},
-		health:    fakeHealth{},
-		jobHealth: fakeHealth{},
-		mail:      disabledMailer{},
-		limiter:   newRateLimiter(),
+		users:      users,
+		vacancies:  &fakeVacancies{},
+		orders:     &fakeOrders{},
+		health:     fakeHealth{},
+		jobHealth:  fakeHealth{},
+		taskHealth: fakeHealth{},
+		mail:       disabledMailer{},
+		limiter:    newRateLimiter(),
 	}
 	return app, users
 }

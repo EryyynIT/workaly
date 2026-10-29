@@ -18,15 +18,18 @@ import (
 
 type fakeVacancies struct {
 	jobpb.JobServiceClient
-	err     error
-	vacancy *jobpb.Vacancy
-	list    *jobpb.ListMyVacanciesResponse
+	err      error
+	vacancy  *jobpb.Vacancy
+	list     *jobpb.ListMyVacanciesResponse
+	response *jobpb.VacancyResponse
 	// lastRequest records the request of whichever RPC ran last; tests that
 	// care about one method read the concrete type they expect.
 	lastCreate   atomic.Value // *jobpb.CreateVacancyRequest
 	lastUpdate   atomic.Value // *jobpb.UpdateVacancyRequest
 	lastList     atomic.Value // *jobpb.ListMyVacanciesRequest
 	lastGetActor atomic.Value // string
+	lastRespond  atomic.Value // *jobpb.CreateVacancyResponseRequest
+	lastWithdraw atomic.Value // *jobpb.WithdrawVacancyResponseRequest
 }
 
 func (f *fakeVacancies) CreateVacancy(_ context.Context, req *jobpb.CreateVacancyRequest, _ ...grpc.CallOption) (*jobpb.Vacancy, error) {
@@ -62,6 +65,27 @@ func (f *fakeVacancies) ListMyVacancies(_ context.Context, req *jobpb.ListMyVaca
 		return f.list, nil
 	}
 	return &jobpb.ListMyVacanciesResponse{}, f.err
+}
+
+func (f *fakeVacancies) CreateVacancyResponse(_ context.Context, req *jobpb.CreateVacancyResponseRequest, _ ...grpc.CallOption) (*jobpb.VacancyResponse, error) {
+	f.lastRespond.Store(req)
+	return f.response, f.err
+}
+
+func (f *fakeVacancies) ListVacancyResponses(_ context.Context, _ *jobpb.ListVacancyResponsesRequest, _ ...grpc.CallOption) (*jobpb.ListVacancyResponsesResponse, error) {
+	if f.response != nil {
+		return &jobpb.ListVacancyResponsesResponse{Responses: []*jobpb.VacancyResponse{f.response}}, f.err
+	}
+	return &jobpb.ListVacancyResponsesResponse{}, f.err
+}
+
+func (f *fakeVacancies) WithdrawVacancyResponse(_ context.Context, req *jobpb.WithdrawVacancyResponseRequest, _ ...grpc.CallOption) (*jobpb.VacancyResponse, error) {
+	f.lastWithdraw.Store(req)
+	return f.response, f.err
+}
+
+func (f *fakeVacancies) GetMyVacancyResponse(_ context.Context, _ *jobpb.GetMyVacancyResponseRequest, _ ...grpc.CallOption) (*jobpb.VacancyResponse, error) {
+	return f.response, f.err
 }
 
 func sampleVacancy() *jobpb.Vacancy {
@@ -282,4 +306,126 @@ func TestVacancyMutationsRejectCrossSite(t *testing.T) {
 
 func fakeActor() string {
 	return "019a2b7e-7c3a-7b1a-8f0e-1a2b3c4d5e70"
+}
+
+func sampleResponse() *jobpb.VacancyResponse {
+	created := time.Date(2026, 10, 30, 9, 30, 0, 0, time.UTC)
+	return &jobpb.VacancyResponse{
+		Id:              "019a2b7e-7c3a-7b1a-8f0e-1a2b3c4d5e71",
+		VacancyId:       "019a2b7e-7c3a-7b1a-8f0e-1a2b3c4d5e6f",
+		CandidateUserId: fakeActor(),
+		CoverLetter:     "Здравствуйте! Готов обсудить роль.",
+		Contact:         "@candidate",
+		Status:          "active",
+		CreatedAt:       timestamppb.New(created),
+	}
+}
+
+// TestRespondVacancyChecksSessionAndActor covers the mutation edge: no
+// session must never reach the RPC, and the actor is the JWT subject only.
+func TestRespondVacancyChecksSessionAndActor(t *testing.T) {
+	app, _ := testApp()
+	fake := app.vacancies.(*fakeVacancies)
+
+	w := doJSON(app, http.MethodPost, "/vacancies/"+sampleVacancy().Id+"/responses",
+		`{"cover_letter":"hi"}`, "")
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous respond: %d", w.Code)
+	}
+	if fake.lastRespond.Load() != nil {
+		t.Fatal("anonymous respond reached the RPC")
+	}
+
+	fake.response = sampleResponse()
+	actor := fakeActor()
+	w = doJSON(app, http.MethodPost, "/vacancies/"+sampleVacancy().Id+"/responses",
+		`{"cover_letter":"Здравствуйте!","contact":"@candidate"}`, sessionCookie(app, actor))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("respond: %d %s", w.Code, w.Body.String())
+	}
+	req, _ := fake.lastRespond.Load().(*jobpb.CreateVacancyResponseRequest)
+	if req == nil || req.ActorUserId != actor || req.VacancyId != sampleVacancy().Id {
+		t.Fatalf("RPC request = %+v", req)
+	}
+	if req.CoverLetter != "Здравствуйте!" || req.Contact != "@candidate" {
+		t.Fatalf("RPC fields = %+v", req)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `"contact":"@candidate"`) || !strings.Contains(body, `"status":"active"`) {
+		t.Fatalf("response view wrong: %s", body)
+	}
+}
+
+func TestRespondVacancyNeedsVerifiedEmail(t *testing.T) {
+	app, _ := testApp()
+	// db == nil means the gate passes; the interesting mapping is the RPC
+	// result. A repeat active response arrives as AlreadyExists and must
+	// surface as a precise 409.
+	fake := app.vacancies.(*fakeVacancies)
+	fake.err = status.Error(codes.AlreadyExists, "you already have an active response to this vacancy")
+
+	w := doJSON(app, http.MethodPost, "/vacancies/"+sampleVacancy().Id+"/responses",
+		`{"cover_letter":"hi"}`, sessionCookie(app, fakeActor()))
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "active response") {
+		t.Fatalf("repeat respond: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestWithdrawVacancyResponseCarriesIDs(t *testing.T) {
+	app, _ := testApp()
+	fake := app.vacancies.(*fakeVacancies)
+	fake.response = sampleResponse()
+	fake.response.Status = "withdrawn"
+	withdrawn := time.Date(2026, 10, 30, 10, 0, 0, 0, time.UTC)
+	fake.response.WithdrawnAt = timestamppb.New(withdrawn)
+	actor := fakeActor()
+
+	path := "/vacancies/" + sampleVacancy().Id + "/responses/" + sampleResponse().Id + "/withdraw"
+	w := doJSON(app, http.MethodPost, path, "", sessionCookie(app, actor))
+	if w.Code != http.StatusOK {
+		t.Fatalf("withdraw: %d %s", w.Code, w.Body.String())
+	}
+	req, _ := fake.lastWithdraw.Load().(*jobpb.WithdrawVacancyResponseRequest)
+	if req == nil || req.ActorUserId != actor || req.VacancyId != sampleVacancy().Id ||
+		req.ResponseId != sampleResponse().Id {
+		t.Fatalf("RPC withdraw request = %+v", req)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `"status":"withdrawn"`) || !strings.Contains(body, `"withdrawn_at":"2026-10-30T10:00:00Z"`) {
+		t.Fatalf("withdrawn view wrong: %s", body)
+	}
+}
+
+func TestListVacancyResponsesIsAuthorOnly(t *testing.T) {
+	app, _ := testApp()
+	fake := app.vacancies.(*fakeVacancies)
+	fake.response = sampleResponse()
+
+	w := doJSON(app, http.MethodGet, "/vacancies/"+sampleVacancy().Id+"/responses", "", sessionCookie(app, fakeActor()))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"responses":[`) {
+		t.Fatalf("author list: %d %s", w.Code, w.Body.String())
+	}
+	// A stranger gets the uniform 404 the service reports for a foreign vacancy.
+	fake.err = status.Error(codes.NotFound, "vacancy not found")
+	fake.response = nil
+	w = doJSON(app, http.MethodGet, "/vacancies/"+sampleVacancy().Id+"/responses", "", sessionCookie(app, fakeActor()))
+	if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), `"error":"vacancy not found"`) {
+		t.Fatalf("stranger list: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGetMyVacancyResponseMapsNotFound(t *testing.T) {
+	app, _ := testApp()
+	fake := app.vacancies.(*fakeVacancies)
+	fake.response = sampleResponse()
+
+	w := doJSON(app, http.MethodGet, "/vacancies/"+sampleVacancy().Id+"/responses/mine", "", sessionCookie(app, fakeActor()))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"candidate_user_id":"`+fakeActor()+`"`) {
+		t.Fatalf("own response: %d %s", w.Code, w.Body.String())
+	}
+	fake.err = status.Error(codes.NotFound, "vacancy not found")
+	w = doJSON(app, http.MethodGet, "/vacancies/"+sampleVacancy().Id+"/responses/mine", "", sessionCookie(app, fakeActor()))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("missing own response: %d", w.Code)
+	}
 }

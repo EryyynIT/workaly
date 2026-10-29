@@ -239,6 +239,8 @@ func (app *application) writeVacancyError(c *gin.Context, err error) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "vacancy not found"})
 	case codes.FailedPrecondition:
 		c.JSON(http.StatusConflict, gin.H{"error": status.Convert(err).Message()})
+	case codes.AlreadyExists:
+		c.JSON(http.StatusConflict, gin.H{"error": status.Convert(err).Message()})
 	case codes.ResourceExhausted:
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "service busy; try again later"})
 	case codes.Unavailable:

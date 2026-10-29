@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	jobpb "github.com/EryyynIT/workaly/auth-service/pb/jobpb"
+	taskpb "github.com/EryyynIT/workaly/auth-service/pb/taskpb"
 	pb "github.com/EryyynIT/workaly/auth-service/pb/userpb"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
@@ -32,13 +33,15 @@ type application struct {
 	// why handlers branch on it. shortcut: removing these branches requires a
 	// test database (sqlmock or testcontainers); deferred until module
 	// downloads are reliable.
-	db        *sql.DB
-	users     pb.UserServiceClient
-	vacancies jobpb.JobServiceClient
-	health    healthpb.HealthClient
-	jobHealth healthpb.HealthClient
-	mail      mailSender
-	limiter   *rateLimiter
+	db         *sql.DB
+	users      pb.UserServiceClient
+	vacancies  jobpb.JobServiceClient
+	orders     taskpb.TaskServiceClient
+	health     healthpb.HealthClient
+	jobHealth  healthpb.HealthClient
+	taskHealth healthpb.HealthClient
+	mail       mailSender
+	limiter    *rateLimiter
 }
 
 type registerRequest struct {
@@ -100,6 +103,25 @@ func (app *application) router() *gin.Engine {
 	router.POST("/vacancies/:id/close", app.jsonRequest, app.closeVacancy)
 	router.DELETE("/vacancies/:id", app.deleteVacancy)
 	router.GET("/my/vacancies", app.listMyVacancies)
+	// Vacancy responses: the candidate's reply carries their contact channel,
+	// which is served to the vacancy author only (S2 decision 3).
+	router.POST("/vacancies/:id/responses", app.jsonRequest, app.createVacancyResponse)
+	router.GET("/vacancies/:id/responses", app.listVacancyResponses)
+	router.GET("/vacancies/:id/responses/mine", app.getMyVacancyResponse)
+	router.POST("/vacancies/:id/responses/:rid/withdraw", app.jsonRequest, app.withdrawVacancyResponse)
+	// Order catalog: the executor side mirrors the vacancy responses, with a
+	// proposed amount and deadline instead of a cover letter contact.
+	router.POST("/orders", app.jsonRequest, app.createOrder)
+	router.GET("/orders/:id", app.getOrder)
+	router.PATCH("/orders/:id", app.jsonRequest, app.patchOrder)
+	router.POST("/orders/:id/publish", app.jsonRequest, app.publishOrder)
+	router.POST("/orders/:id/close", app.jsonRequest, app.closeOrder)
+	router.DELETE("/orders/:id", app.deleteOrder)
+	router.GET("/my/orders", app.listMyOrders)
+	router.POST("/orders/:id/proposals", app.jsonRequest, app.createOrderProposal)
+	router.GET("/orders/:id/proposals", app.listOrderProposals)
+	router.GET("/orders/:id/proposals/mine", app.getMyOrderProposal)
+	router.POST("/orders/:id/proposals/:pid/withdraw", app.jsonRequest, app.withdrawOrderProposal)
 	return router
 }
 
@@ -938,6 +960,7 @@ func (app *application) ready(c *gin.Context) {
 	}{
 		{app.health, "user.UserService"},
 		{app.jobHealth, "job.JobService"},
+		{app.taskHealth, "task.TaskService"},
 	} {
 		res, err := probe.client.Check(ctx, &healthpb.HealthCheckRequest{Service: probe.service})
 		if err != nil || res == nil || res.Status != healthpb.HealthCheckResponse_SERVING {

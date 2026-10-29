@@ -86,6 +86,7 @@ services:
       HTTP_ADDR: 0.0.0.0:8080
       USER_SERVICE_ADDR: user-service:50051
       JOB_SERVICE_ADDR: job-service:50052
+      TASK_SERVICE_ADDR: task-service:50053
       AUTH_DATABASE_URL: postgres://workaly_auth:local-development-only@auth-db:5432/workaly_auth?options=-c%20statement_timeout%3D3000
       DEV_MAIL_LOG: ${DEV_MAIL_LOG:-true}
       GIN_MODE: release
@@ -95,6 +96,8 @@ services:
       auth-db:
         condition: service_healthy
       user-service:
+        condition: service_started
+      task-service:
         condition: service_started
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
