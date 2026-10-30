@@ -12,9 +12,10 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
-// Catalog bodies stay small; the limit keeps a malformed request from hogging
-// memory.
-const grpcMaxMessageSize = 8 << 10
+// Catalog list pages carry up to 50 rows with description bodies of a few
+// KB each; the limit must fit a maximal page (~350 KB) while still keeping a
+// malformed request from hogging memory. 1 MiB covers it with headroom.
+const grpcMaxMessageSize = 1 << 20
 
 // Serve wires the common gRPC surface of a catalog service: listener, message
 // size limits, standard health registration and graceful shutdown. register
