@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"math/big"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -288,6 +290,102 @@ func (s *taskService) ListMyOrders(ctx context.Context, req *taskpb.ListMyOrders
 			// last row returned to the client.
 			last := response.Orders[pageSize-1]
 			response.NextPageToken = encodeCursor(last.CreatedAt.AsTime(), last.Id)
+			break
+		}
+		o, err := scanOrder(rows)
+		if err != nil {
+			return nil, mapDBError(err)
+		}
+		response.Orders = append(response.Orders, o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapDBError(err)
+	}
+	return response, nil
+}
+
+// ListPublishedOrders serves the public catalog: only published rows,
+// newest first, keyset by (published_at, id) matching the orders_public
+// index. Filters are validated before touching the database.
+func (s *taskService) ListPublishedOrders(ctx context.Context, req *taskpb.ListPublishedOrdersRequest) (*taskpb.ListPublishedOrdersResponse, error) {
+	pageSize := int(req.PageSize)
+	if pageSize == 0 {
+		pageSize = 20
+	}
+	if pageSize < 0 || pageSize > 50 {
+		return nil, invalid("page_size must be between 1 and 50")
+	}
+	if req.BudgetType != "" && !budgetTypes[req.BudgetType] {
+		return nil, invalid("budget_type must be one of: fixed, hourly")
+	}
+	if req.BudgetMin != "" && !moneyPattern.MatchString(req.BudgetMin) {
+		return nil, invalid("budget_min must be a decimal amount like 50000")
+	}
+	if req.BudgetMax != "" && !moneyPattern.MatchString(req.BudgetMax) {
+		return nil, invalid("budget_max must be a decimal amount like 250000")
+	}
+	if runes := utf8.RuneCountInString(req.TitleContains); runes > 120 {
+		return nil, invalid("title_contains must not exceed 120 characters")
+	}
+
+	var cursorAt time.Time
+	var cursorID string
+	if req.PageToken != "" {
+		at, id, err := decodeCursor(req.PageToken)
+		if err != nil {
+			return nil, invalid("page_token is not a valid cursor")
+		}
+		cursorAt, cursorID = at, id
+	}
+
+	// Same construction as the vacancy catalog: constant fragments and
+	// numbered parameters only. The budget is a single amount, so both
+	// bounds apply to budget_amount directly. ILIKE metacharacters of the
+	// search term are escaped to literals.
+	var conditions strings.Builder
+	args := []any{}
+	next := 1
+	push := func(fragment string, value any) {
+		conditions.WriteString(" AND ")
+		conditions.WriteString(fragment)
+		args = append(args, value)
+		next++
+	}
+	if !cursorAt.IsZero() {
+		push(fmt.Sprintf("(published_at, id) < ($%d, $%d::uuid)", next, next+1), cursorAt)
+		args = append(args, cursorID)
+		next++
+	}
+	if req.BudgetType != "" {
+		push(fmt.Sprintf("budget_type = $%d", next), req.BudgetType)
+	}
+	if req.BudgetMin != "" {
+		push(fmt.Sprintf("budget_amount >= $%d::numeric", next), req.BudgetMin)
+	}
+	if req.BudgetMax != "" {
+		push(fmt.Sprintf("budget_amount <= $%d::numeric", next), req.BudgetMax)
+	}
+	if req.TitleContains != "" {
+		push(fmt.Sprintf("title ILIKE '%%' || $%d || '%%'", next), ilikeEscape.Replace(req.TitleContains))
+	}
+	args = append(args, pageSize+1)
+	query := `SELECT ` + orderColumns + ` FROM orders WHERE status = 'published'` +
+		conditions.String() +
+		fmt.Sprintf(` ORDER BY published_at DESC, id DESC LIMIT $%d`, next)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, mapDBError(err)
+	}
+	defer rows.Close()
+
+	response := &taskpb.ListPublishedOrdersResponse{}
+	for i := 0; rows.Next(); i++ {
+		if i == pageSize {
+			// One extra row proves a next page exists; the token sits on the
+			// last row returned to the client.
+			last := response.Orders[pageSize-1]
+			response.NextPageToken = encodeCursor(last.PublishedAt.AsTime(), last.Id)
 			break
 		}
 		o, err := scanOrder(rows)

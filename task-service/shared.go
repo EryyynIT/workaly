@@ -21,6 +21,10 @@ import (
 var (
 	moneyPattern = regexp.MustCompile(`^[0-9]{1,10}(\.[0-9]{1,2})?$`)
 	currencyPatt = regexp.MustCompile(`^[A-Z]{3}$`)
+	// ilikeEscape turns LIKE/ILIKE metacharacters into literals so the
+	// catalog search term is always a plain substring match (default
+	// backslash escaping of PostgreSQL).
+	ilikeEscape = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 )
 
 type rowScanner interface{ Scan(dest ...any) error }
