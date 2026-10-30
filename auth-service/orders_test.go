@@ -22,8 +22,10 @@ type fakeOrders struct {
 	order    *taskpb.Order
 	proposal *taskpb.OrderProposal
 	// lastCreate records the request of whichever RPC ran last.
-	lastCreate  atomic.Value // *taskpb.CreateOrderRequest
-	lastPropose atomic.Value // *taskpb.CreateOrderProposalRequest
+	lastCreate     atomic.Value // *taskpb.CreateOrderRequest
+	lastPropose    atomic.Value // *taskpb.CreateOrderProposalRequest
+	lastPublicList atomic.Value // *taskpb.ListPublishedOrdersRequest
+	publicList     *taskpb.ListPublishedOrdersResponse
 }
 
 func (f *fakeOrders) CreateOrder(_ context.Context, req *taskpb.CreateOrderRequest, _ ...grpc.CallOption) (*taskpb.Order, error) {
@@ -53,6 +55,14 @@ func (f *fakeOrders) DeleteDraft(_ context.Context, _ *taskpb.DeleteDraftRequest
 
 func (f *fakeOrders) ListMyOrders(_ context.Context, _ *taskpb.ListMyOrdersRequest, _ ...grpc.CallOption) (*taskpb.ListMyOrdersResponse, error) {
 	return &taskpb.ListMyOrdersResponse{}, f.err
+}
+
+func (f *fakeOrders) ListPublishedOrders(_ context.Context, req *taskpb.ListPublishedOrdersRequest, _ ...grpc.CallOption) (*taskpb.ListPublishedOrdersResponse, error) {
+	f.lastPublicList.Store(req)
+	if f.publicList != nil {
+		return f.publicList, nil
+	}
+	return &taskpb.ListPublishedOrdersResponse{}, f.err
 }
 
 func (f *fakeOrders) CreateOrderProposal(_ context.Context, req *taskpb.CreateOrderProposalRequest, _ ...grpc.CallOption) (*taskpb.OrderProposal, error) {
@@ -228,4 +238,58 @@ func TestOrderMutationsRejectCrossSite(t *testing.T) {
 			t.Fatalf("%s %s from foreign origin: %d", tc.method, tc.path, w.Code)
 		}
 	}
+}
+
+// TestListPublicOrders covers the anonymous catalog: no session needed,
+// filters pass through, page_size validated at the edge, RPC errors map.
+func TestListPublicOrders(t *testing.T) {
+	app, _ := testApp()
+	fake := app.orders.(*fakeOrders)
+	fake.publicList = &taskpb.ListPublishedOrdersResponse{
+		Orders: []*taskpb.Order{sampleOrder()},
+	}
+
+	// Anonymous access with all filters passes them through verbatim.
+	w := get(app, "/orders?budget_type=fixed&budget_min=50000&budget_max=150000&title_contains=site&page_size=25")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"orders":[`) {
+		t.Fatalf("public list: %d %s", w.Code, w.Body.String())
+	}
+	req, _ := fake.lastPublicList.Load().(*taskpb.ListPublishedOrdersRequest)
+	if req == nil {
+		t.Fatal("public list did not reach the RPC")
+	}
+	if req.BudgetType != "fixed" || req.BudgetMin != "50000" ||
+		req.BudgetMax != "150000" || req.TitleContains != "site" || req.PageSize != 25 {
+		t.Fatalf("public list filters = %+v", req)
+	}
+
+	// A broken session cookie must not fail the public read.
+	w = doJSON(app, http.MethodGet, "/orders", "", "token=garbage")
+	if w.Code != http.StatusOK {
+		t.Fatalf("public list with broken cookie: %d", w.Code)
+	}
+
+	// Bad page_size is rejected at the edge.
+	for _, raw := range []string{"abc", "0", "51"} {
+		w := get(app, "/orders?page_size="+raw)
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "between 1 and 50") {
+			t.Fatalf("page_size=%q: %d", raw, w.Code)
+		}
+	}
+
+	// Service validation errors map to 400 with the precise message.
+	fake.publicList = nil
+	fake.err = status.Error(codes.InvalidArgument, "budget_type must be one of: fixed, hourly")
+	w = get(app, "/orders?budget_type=daily")
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "budget_type") {
+		t.Fatalf("bad filter: %d %s", w.Code, w.Body.String())
+	}
+
+	// Infrastructure failure maps to 503 without leaking detail.
+	fake.err = status.Error(codes.Unavailable, "internal detail")
+	w = get(app, "/orders")
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unavailable: %d", w.Code)
+	}
+	fake.err = nil
 }

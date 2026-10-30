@@ -97,6 +97,7 @@ func (app *application) router() *gin.Engine {
 	// Vacancy catalog: the edge authenticates the browser and proxies the
 	// actor (JWT subject) to job-service over the internal channel.
 	router.POST("/vacancies", app.jsonRequest, app.createVacancy)
+	router.GET("/vacancies", app.listPublicVacancies)
 	router.GET("/vacancies/:id", app.getVacancy)
 	router.PATCH("/vacancies/:id", app.jsonRequest, app.patchVacancy)
 	router.POST("/vacancies/:id/publish", app.jsonRequest, app.publishVacancy)
@@ -112,6 +113,7 @@ func (app *application) router() *gin.Engine {
 	// Order catalog: the executor side mirrors the vacancy responses, with a
 	// proposed amount and deadline instead of a cover letter contact.
 	router.POST("/orders", app.jsonRequest, app.createOrder)
+	router.GET("/orders", app.listPublicOrders)
 	router.GET("/orders/:id", app.getOrder)
 	router.PATCH("/orders/:id", app.jsonRequest, app.patchOrder)
 	router.POST("/orders/:id/publish", app.jsonRequest, app.publishOrder)

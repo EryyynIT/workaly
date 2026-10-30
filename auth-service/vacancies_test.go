@@ -24,12 +24,14 @@ type fakeVacancies struct {
 	response *jobpb.VacancyResponse
 	// lastRequest records the request of whichever RPC ran last; tests that
 	// care about one method read the concrete type they expect.
-	lastCreate   atomic.Value // *jobpb.CreateVacancyRequest
-	lastUpdate   atomic.Value // *jobpb.UpdateVacancyRequest
-	lastList     atomic.Value // *jobpb.ListMyVacanciesRequest
-	lastGetActor atomic.Value // string
-	lastRespond  atomic.Value // *jobpb.CreateVacancyResponseRequest
-	lastWithdraw atomic.Value // *jobpb.WithdrawVacancyResponseRequest
+	lastCreate     atomic.Value // *jobpb.CreateVacancyRequest
+	lastUpdate     atomic.Value // *jobpb.UpdateVacancyRequest
+	lastList       atomic.Value // *jobpb.ListMyVacanciesRequest
+	lastPublicList atomic.Value // *jobpb.ListPublishedVacanciesRequest
+	publicList     *jobpb.ListPublishedVacanciesResponse
+	lastGetActor   atomic.Value // string
+	lastRespond    atomic.Value // *jobpb.CreateVacancyResponseRequest
+	lastWithdraw   atomic.Value // *jobpb.WithdrawVacancyResponseRequest
 }
 
 func (f *fakeVacancies) CreateVacancy(_ context.Context, req *jobpb.CreateVacancyRequest, _ ...grpc.CallOption) (*jobpb.Vacancy, error) {
@@ -65,6 +67,14 @@ func (f *fakeVacancies) ListMyVacancies(_ context.Context, req *jobpb.ListMyVaca
 		return f.list, nil
 	}
 	return &jobpb.ListMyVacanciesResponse{}, f.err
+}
+
+func (f *fakeVacancies) ListPublishedVacancies(_ context.Context, req *jobpb.ListPublishedVacanciesRequest, _ ...grpc.CallOption) (*jobpb.ListPublishedVacanciesResponse, error) {
+	f.lastPublicList.Store(req)
+	if f.publicList != nil {
+		return f.publicList, nil
+	}
+	return &jobpb.ListPublishedVacanciesResponse{}, f.err
 }
 
 func (f *fakeVacancies) CreateVacancyResponse(_ context.Context, req *jobpb.CreateVacancyResponseRequest, _ ...grpc.CallOption) (*jobpb.VacancyResponse, error) {
@@ -281,6 +291,61 @@ func TestListMyVacanciesMapsAndValidates(t *testing.T) {
 			t.Fatalf("page_size=%q: %d %s", raw, w.Code, w.Body.String())
 		}
 	}
+}
+
+// TestListPublicVacancies covers the anonymous catalog: no session needed,
+// filters pass through, page_size validated at the edge, RPC errors map.
+func TestListPublicVacancies(t *testing.T) {
+	app, _ := testApp()
+	fake := app.vacancies.(*fakeVacancies)
+	fake.publicList = &jobpb.ListPublishedVacanciesResponse{
+		Vacancies: []*jobpb.Vacancy{sampleVacancy()},
+	}
+
+	// Anonymous access with all filters passes them through verbatim.
+	w := get(app, "/vacancies?employment_type=remote&work_format=remote&salary_min_from=100000&salary_max_to=200000&title_contains=go&page_size=25")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"vacancies":[`) {
+		t.Fatalf("public list: %d %s", w.Code, w.Body.String())
+	}
+	req, _ := fake.lastPublicList.Load().(*jobpb.ListPublishedVacanciesRequest)
+	if req == nil {
+		t.Fatal("public list did not reach the RPC")
+	}
+	if req.EmploymentType != "remote" || req.WorkFormat != "remote" ||
+		req.SalaryMinFrom != "100000" || req.SalaryMaxTo != "200000" ||
+		req.TitleContains != "go" || req.PageSize != 25 {
+		t.Fatalf("public list filters = %+v", req)
+	}
+
+	// A broken session cookie must not fail the public read.
+	w = doJSON(app, http.MethodGet, "/vacancies", "", "token=garbage")
+	if w.Code != http.StatusOK {
+		t.Fatalf("public list with broken cookie: %d", w.Code)
+	}
+
+	// Bad page_size is rejected at the edge.
+	for _, raw := range []string{"abc", "0", "51"} {
+		w := get(app, "/vacancies?page_size="+raw)
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "between 1 and 50") {
+			t.Fatalf("page_size=%q: %d", raw, w.Code)
+		}
+	}
+
+	// Service validation errors map to 400 with the precise message.
+	fake.publicList = nil
+	fake.err = status.Error(codes.InvalidArgument, "employment_type must be one of: full_time, part_time, contract, internship")
+	w = get(app, "/vacancies?employment_type=shift")
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "employment_type") {
+		t.Fatalf("bad filter: %d %s", w.Code, w.Body.String())
+	}
+
+	// Infrastructure failure maps to 503 without leaking detail.
+	fake.err = status.Error(codes.Unavailable, "internal detail")
+	w = get(app, "/vacancies")
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unavailable: %d", w.Code)
+	}
+	fake.err = nil
 }
 
 func TestVacancyMutationsRejectCrossSite(t *testing.T) {

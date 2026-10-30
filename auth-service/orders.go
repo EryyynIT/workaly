@@ -202,6 +202,35 @@ func (app *application) listMyOrders(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"orders": views, "next_page_token": list.NextPageToken})
 }
 
+// listPublicOrders serves the anonymous catalog. The query filters pass
+// through verbatim; the catalog service validates them and reports precise
+// 400s, the edge adds no filter logic of its own.
+func (app *application) listPublicOrders(c *gin.Context) {
+	pageSize, ok := parsePageSize(c)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), requestTimeout)
+	defer cancel()
+	list, err := app.orders.ListPublishedOrders(ctx, &taskpb.ListPublishedOrdersRequest{
+		PageToken:     c.Query("page_token"),
+		PageSize:      pageSize,
+		BudgetType:    c.Query("budget_type"),
+		BudgetMin:     c.Query("budget_min"),
+		BudgetMax:     c.Query("budget_max"),
+		TitleContains: c.Query("title_contains"),
+	})
+	if err != nil {
+		app.writeOrderError(c, err)
+		return
+	}
+	views := make([]*orderView, 0, len(list.Orders))
+	for _, o := range list.Orders {
+		views = append(views, orderJSON(o))
+	}
+	c.JSON(http.StatusOK, gin.H{"orders": views, "next_page_token": list.NextPageToken})
+}
+
 // proposalRequest is the body of creating an order proposal: the executor's
 // offer, a draft of the deal terms confirmed later in S3.
 type proposalRequest struct {

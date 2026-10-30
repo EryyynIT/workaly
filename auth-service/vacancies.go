@@ -239,6 +239,36 @@ func (app *application) listMyVacancies(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"vacancies": views, "next_page_token": list.NextPageToken})
 }
 
+// listPublicVacancies serves the anonymous catalog. The query filters pass
+// through verbatim; the catalog service validates them and reports precise
+// 400s, the edge adds no filter logic of its own.
+func (app *application) listPublicVacancies(c *gin.Context) {
+	pageSize, ok := parsePageSize(c)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), requestTimeout)
+	defer cancel()
+	list, err := app.vacancies.ListPublishedVacancies(ctx, &jobpb.ListPublishedVacanciesRequest{
+		PageToken:      c.Query("page_token"),
+		PageSize:       pageSize,
+		EmploymentType: c.Query("employment_type"),
+		WorkFormat:     c.Query("work_format"),
+		SalaryMinFrom:  c.Query("salary_min_from"),
+		SalaryMaxTo:    c.Query("salary_max_to"),
+		TitleContains:  c.Query("title_contains"),
+	})
+	if err != nil {
+		app.writeVacancyError(c, err)
+		return
+	}
+	views := make([]*vacancyView, 0, len(list.Vacancies))
+	for _, v := range list.Vacancies {
+		views = append(views, vacancyJSON(v))
+	}
+	c.JSON(http.StatusOK, gin.H{"vacancies": views, "next_page_token": list.NextPageToken})
+}
+
 // writeVacancyError maps job-service failures to HTTP. Domain messages of our
 // own service are safe to show; the 404 body stays uniform so that a draft's
 // existence is never disclosed.
