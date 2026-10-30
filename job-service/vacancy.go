@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/big"
 	"regexp"
@@ -33,6 +34,10 @@ var (
 	}
 	moneyPattern = regexp.MustCompile(`^[0-9]{1,10}(\.[0-9]{1,2})?$`)
 	currencyPatt = regexp.MustCompile(`^[A-Z]{3}$`)
+	// ilikeEscape turns LIKE/ILIKE metacharacters into literals so the
+	// catalog search term is always a plain substring match (default
+	// backslash escaping of PostgreSQL).
+	ilikeEscape = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 )
 
 type vacancyFields struct {
@@ -332,6 +337,112 @@ func (s *jobService) ListMyVacancies(_ context.Context, req *jobpb.ListMyVacanci
 			// last row returned to the client.
 			last := response.Vacancies[pageSize-1]
 			response.NextPageToken = encodeCursor(last.CreatedAt.AsTime(), last.Id)
+			break
+		}
+		v, err := scanVacancy(rows)
+		if err != nil {
+			return nil, mapDBError(err)
+		}
+		response.Vacancies = append(response.Vacancies, v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapDBError(err)
+	}
+	return response, nil
+}
+
+// ListPublishedVacancies serves the public catalog: only published rows,
+// newest first, keyset by (published_at, id) matching the vacancies_public
+// index. Filters are validated before touching the database so a bad filter
+// reads exactly like a bad field of any other RPC.
+func (s *jobService) ListPublishedVacancies(ctx context.Context, req *jobpb.ListPublishedVacanciesRequest) (*jobpb.ListPublishedVacanciesResponse, error) {
+	pageSize := int(req.PageSize)
+	if pageSize == 0 {
+		pageSize = 20
+	}
+	if pageSize < 0 || pageSize > 50 {
+		return nil, invalid("page_size must be between 1 and 50")
+	}
+	if req.EmploymentType != "" && !employmentTypes[req.EmploymentType] {
+		return nil, invalid("employment_type must be one of: full_time, part_time, contract, internship")
+	}
+	if req.WorkFormat != "" && !workFormats[req.WorkFormat] {
+		return nil, invalid("work_format must be one of: onsite, remote, hybrid")
+	}
+	if req.SalaryMinFrom != "" && !moneyPattern.MatchString(req.SalaryMinFrom) {
+		return nil, invalid("salary_min_from must be a decimal amount like 150000")
+	}
+	if req.SalaryMaxTo != "" && !moneyPattern.MatchString(req.SalaryMaxTo) {
+		return nil, invalid("salary_max_to must be a decimal amount like 250000")
+	}
+	if runes := utf8.RuneCountInString(req.TitleContains); runes > 120 {
+		return nil, invalid("title_contains must not exceed 120 characters")
+	}
+
+	var cursorAt time.Time
+	var cursorID string
+	if req.PageToken != "" {
+		at, id, err := decodeCursor(req.PageToken)
+		if err != nil {
+			return nil, invalid("page_token is not a valid cursor")
+		}
+		cursorAt, cursorID = at, id
+	}
+
+	// Conditions are appended in a fixed order; the SQL text is assembled
+	// from constant fragments only, and every client value is a numbered
+	// parameter, so injection is impossible. The salary bounds apply to the
+	// vacancy's own range (salary_min >= from, salary_max <= to); a vacancy
+	// without a salary matches only unfiltered queries because NULL
+	// comparisons fail. ILIKE metacharacters of the search term are escaped
+	// so a query for "100%" finds literal text instead of matching all.
+	var conditions strings.Builder
+	args := []any{}
+	next := 1
+	push := func(fragment string, value any) {
+		conditions.WriteString(" AND ")
+		conditions.WriteString(fragment)
+		args = append(args, value)
+		next++
+	}
+	if !cursorAt.IsZero() {
+		push(fmt.Sprintf("(published_at, id) < ($%d, $%d::uuid)", next, next+1), cursorAt)
+		args = append(args, cursorID)
+		next++
+	}
+	if req.EmploymentType != "" {
+		push(fmt.Sprintf("employment_type = $%d", next), req.EmploymentType)
+	}
+	if req.WorkFormat != "" {
+		push(fmt.Sprintf("work_format = $%d", next), req.WorkFormat)
+	}
+	if req.SalaryMinFrom != "" {
+		push(fmt.Sprintf("salary_min >= $%d::numeric", next), req.SalaryMinFrom)
+	}
+	if req.SalaryMaxTo != "" {
+		push(fmt.Sprintf("salary_max <= $%d::numeric", next), req.SalaryMaxTo)
+	}
+	if req.TitleContains != "" {
+		push(fmt.Sprintf("title ILIKE '%%' || $%d || '%%'", next), ilikeEscape.Replace(req.TitleContains))
+	}
+	args = append(args, pageSize+1)
+	query := `SELECT ` + vacancyColumns + ` FROM vacancies WHERE status = 'published'` +
+		conditions.String() +
+		fmt.Sprintf(` ORDER BY published_at DESC, id DESC LIMIT $%d`, next)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, mapDBError(err)
+	}
+	defer rows.Close()
+
+	response := &jobpb.ListPublishedVacanciesResponse{}
+	for i := 0; rows.Next(); i++ {
+		if i == pageSize {
+			// One extra row proves a next page exists; the token sits on the
+			// last row returned to the client.
+			last := response.Vacancies[pageSize-1]
+			response.NextPageToken = encodeCursor(last.PublishedAt.AsTime(), last.Id)
 			break
 		}
 		v, err := scanVacancy(rows)
