@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"net/http"
-	"strconv"
 	"time"
 
 	jobpb "github.com/EryyynIT/workaly/auth-service/pb/jobpb"
@@ -63,14 +62,9 @@ func (app *application) listVacancyResponses(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var pageSize int32
-	if raw := c.Query("page_size"); raw != "" {
-		value, err := strconv.ParseInt(raw, 10, 32)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "page_size must be an integer between 1 and 50"})
-			return
-		}
-		pageSize = int32(value)
+	pageSize, ok := parsePageSize(c)
+	if !ok {
+		return
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), requestTimeout)
 	defer cancel()

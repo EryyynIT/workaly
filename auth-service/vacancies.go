@@ -196,19 +196,30 @@ func (app *application) deleteVacancy(c *gin.Context) {
 	c.JSON(http.StatusOK, vacancyJSON(v))
 }
 
+// parsePageSize reads the optional page_size query parameter. The edge
+// enforces the documented range itself so the client gets one uniform 400
+// text regardless of which catalog service sits behind the route.
+func parsePageSize(c *gin.Context) (int32, bool) {
+	raw := c.Query("page_size")
+	if raw == "" {
+		return 0, true
+	}
+	value, err := strconv.ParseInt(raw, 10, 32)
+	if err != nil || value < 1 || value > 50 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "page_size must be an integer between 1 and 50"})
+		return 0, false
+	}
+	return int32(value), true
+}
+
 func (app *application) listMyVacancies(c *gin.Context) {
 	actor, ok := app.actor(c)
 	if !ok {
 		return
 	}
-	var pageSize int32
-	if raw := c.Query("page_size"); raw != "" {
-		value, err := strconv.ParseInt(raw, 10, 32)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "page_size must be an integer between 1 and 50"})
-			return
-		}
-		pageSize = int32(value)
+	pageSize, ok := parsePageSize(c)
+	if !ok {
+		return
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), requestTimeout)
 	defer cancel()

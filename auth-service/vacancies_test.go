@@ -273,12 +273,12 @@ func TestListMyVacanciesMapsAndValidates(t *testing.T) {
 		t.Fatalf("defaults wrong: %+v", req)
 	}
 
-	// page_size parse errors must not reach the RPC; range checks live in the
-	// service (a negative size is int32-valid and gets a precise 400 there).
-	for _, raw := range []string{"abc", "99999999999"} {
+	// page_size errors are rejected at the edge with one uniform message and
+	// must not reach the RPC.
+	for _, raw := range []string{"abc", "99999999999", "0", "-1", "51"} {
 		w := doJSON(app, http.MethodGet, "/my/vacancies?page_size="+raw, "", sessionCookie(app, fakeActor()))
-		if w.Code != http.StatusBadRequest {
-			t.Fatalf("page_size=%q: %d", raw, w.Code)
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "between 1 and 50") {
+			t.Fatalf("page_size=%q: %d %s", raw, w.Code, w.Body.String())
 		}
 	}
 }
