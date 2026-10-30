@@ -386,8 +386,46 @@ S2.2: вакансии — CRUD автора, publish/close, optimistic-верс
 
 ### Незавершённое
 
-- Публичные каталоги `GET /vacancies` и `GET /orders` (keyset, фильтры) —
-  следующее изменение S2.
+- Тестовая БД для unit-тестов и типизированный разбор ошибок соединения
+  в `mapDBError` — назначены на S7 (`development.md`).
+- Распределённый rate limiting по-прежнему per-process (S4/S7).
+
+## S2.6: публичные каталоги GET /vacancies и GET /orders — выполнены
+
+Дата: 2026-10-30.
+
+### Изменения
+
+- `contracts/job.proto` / `contracts/task.proto`: `ListPublishedVacancies` /
+  `ListPublishedOrders` — публичный список без actor, keyset-пагинация по
+  `(published_at, id)`, лимит страницы ≤ 50, фильтры (employment_type,
+  work_format, salary_min_from/salary_max_to для вакансий; budget_type,
+  budget_min/budget_max для заказов) и ILIKE-поиск по заголовку.
+- `job-service` / `task-service`: реализация — динамический WHERE из
+  константных фрагментов и пронумерованных параметров (инъекция
+  невозможна), ILIKE-метасимволы поискового термина экранируются,
+  фильтры валидируются до обращения к БД (InvalidArgument с точным
+  текстом). Курсор сидит на `(published_at, id)` последней строки
+  страницы; совпадает с частичными индексами `*_public`.
+- `auth-service`: `GET /vacancies` и `GET /orders` — публичные маршруты
+  без сессии; `page_size` валидируется общим `parsePageSize`, фильтры
+  проходят verbatim в gRPC, сервисные 400/503/504 маппятся единообразно.
+- smoke: `catalog_flow` — анонимный листинг, фильтры по каждому полю,
+  keyset-пагинация по страницам, 400 на битые фильтры и page_size.
+
+### Подтверждено локально
+
+- Go auth/job/task: gofmt, vet, `go test -race`; unit-тесты грани
+  (TestListPublicVacancies / TestListPublicOrders).
+- `make proto`: перегенерация не даёт расхождений.
+- Compose-стенд (podman): полный smoke включая `catalog_flow` — PASS.
+- Попутно найдено и исправлено: `grpcMaxMessageSize` в catalogkit был
+  8 КиБ — страница каталога из ~27 вакансий превышала лимит отправки
+  gRPC-сервера и edge отдавал 429 вместо списка. Лимит поднят до 1 МиБ
+  (покрывает максимальную страницу из 50 развёрнутых описаний).
+
+### Незавершённое
+
 - Тестовая БД для unit-тестов и типизированный разбор ошибок соединения
   в `mapDBError` — назначены на S7 (`development.md`).
 - Распределённый rate limiting по-прежнему per-process (S4/S7).

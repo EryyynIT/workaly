@@ -9,6 +9,7 @@ import time
 import uuid
 from http.cookies import SimpleCookie
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 
@@ -313,6 +314,114 @@ def order_flow():
     print("PASS: order flow — author CRUD, email gate, optimistic version, one active proposal, withdraw, close")
 
 
+def catalog_flow():
+    """The public catalog: anonymous listing, filters, keyset pagination."""
+    # Publish three vacancies with distinct attributes to filter by. The
+    # catalog is shared with every earlier smoke run, so all assertions
+    # match against the ids of this run instead of counting rows.
+    email, author, _ = register_account("smoke-catalog")
+    assert request("/verify-email", {"token": dev_verify_token(email)})[0] == 200
+    vacancies = []
+    for title, et, wf, lo, hi in [
+        ("Go-разработчик платёжного шлюза", "full_time", "remote", "100000", "200000"),
+        ("Python backend для маркетплейса", "part_time", "hybrid", "80000", "120000"),
+        ("DevOps в офис, релизы", "full_time", "onsite", "", ""),
+    ]:
+        fields = vacancy_fields(title)
+        fields["employment_type"] = et
+        fields["work_format"] = wf
+        fields["salary_min"] = lo
+        fields["salary_max"] = hi
+        if not lo:
+            fields.pop("salary_min")
+            fields.pop("salary_max")
+            fields.pop("currency")
+        code, _, draft = request("/vacancies", fields, cookie=author)
+        assert code == 201, (code, draft)
+        code, _, body = request(f"/vacancies/{draft['id']}/publish", cookie=author, method="POST")
+        assert code == 200, (code, body)
+        vacancies.append(draft["id"])
+    go_vacancy, python_vacancy, devops_vacancy = vacancies
+
+    def listed_ids(query=""):
+        """Collects all pages of the public catalog and returns the ids."""
+        ids, token = [], ""
+        for _ in range(100):  # guard against a broken next token
+            code, _, body = request("/vacancies?page_size=50&page_token=" + token + query)
+            assert code == 200, (code, body)
+            ids.extend(v["id"] for v in body["vacancies"])
+            token = body["next_page_token"]
+            if not token:
+                return ids
+        raise AssertionError("pagination did not terminate in 100 pages")
+
+    # The public list contains only published vacancies. published_at has
+    # second-level resolution and identical timestamps tie-break by random
+    # UUID, so the relative order of same-run rows is not asserted.
+    all_ids = listed_ids()
+    assert go_vacancy in all_ids and python_vacancy in all_ids and devops_vacancy in all_ids, all_ids
+    assert len(all_ids) == len(set(all_ids)), "a vacancy must never appear twice across pages"
+
+    # Filters narrow the list as expected; other runs' rows are filtered out
+    # by id-membership instead of a global count.
+    full_time = listed_ids("&employment_type=full_time")
+    assert go_vacancy in full_time and devops_vacancy in full_time and python_vacancy not in full_time, full_time
+    onsite = listed_ids("&work_format=onsite")
+    assert devops_vacancy in onsite and go_vacancy not in onsite, onsite
+    titled = listed_ids("&title_contains=Python")
+    assert python_vacancy in titled and go_vacancy not in titled, titled
+    salaried = listed_ids("&salary_min_from=90000&salary_max_to=210000")
+    # Only the Go vacancy fits; Python's max is too low, DevOps has no
+    # salary at all (NULL comparisons fail).
+    assert go_vacancy in salaried and python_vacancy not in salaried and devops_vacancy not in salaried, salaried
+
+    # Invalid filters and page_size are rejected with precise 400s.
+    for query, fragment in [
+        ("?employment_type=shift", "employment_type"),
+        ("?page_size=0", "between 1 and 50"),
+        ("?page_size=51", "between 1 and 50"),
+        ("?page_size=abc", "between 1 and 50"),
+        ("?page_token=garbage", "page_token"),
+    ]:
+        code, _, body = request("/vacancies" + query)
+        assert code == 400 and fragment in body["error"], (query, code, body)
+
+    # ILIKE metacharacters in the search term are literal, not wildcards:
+    # "%" alone would match every title if it reached ILIKE unescaped.
+    pct_hits = listed_ids("&title_contains=%25")  # URL-encoded "%"
+    assert go_vacancy not in pct_hits and python_vacancy not in pct_hits, pct_hits
+
+    # Keyset pagination actually pages: page 2 starts strictly after page 1.
+    code, _, page1 = request("/vacancies?page_size=1")
+    assert code == 200 and len(page1["vacancies"]) == 1 and page1["next_page_token"], page1
+    code, _, page2 = request(f"/vacancies?page_size=1&page_token={page1['next_page_token']}")
+    assert code == 200 and len(page2["vacancies"]) == 1, page2
+    assert page2["vacancies"][0]["id"] != page1["vacancies"][0]["id"], (page1, page2)
+
+    # Publish one order and check the mirrored public catalog.
+    email2, customer, _ = register_account("smoke-catalog-order")
+    assert request("/verify-email", {"token": dev_verify_token(email2)})[0] == 200
+    code, _, draft = request("/orders", order_fields("Сайт для каталога"), cookie=customer)
+    assert code == 201, (code, draft)
+    order_id = draft["id"]
+    code, _, body = request(f"/orders/{order_id}/publish", cookie=customer, method="POST")
+    assert code == 200, (code, body)
+
+    def listed_order_ids(query=""):
+        code, _, body = request("/orders" + query)
+        assert code == 200, (code, body)
+        return [o["id"] for o in body["orders"]]
+
+    assert order_id in listed_order_ids(), "published order must be listed"
+    assert order_id not in listed_order_ids("?budget_type=hourly")
+    assert order_id in listed_order_ids("?budget_min=50000&budget_max=200000")
+    assert order_id in listed_order_ids("?title_contains=" + quote("каталога"))
+    code, _, body = request("/orders?budget_type=daily")
+    assert code == 400 and "budget_type" in body["error"], (code, body)
+
+    print("PASS: public catalog — anonymous listing, filters, pagination")
+
+
 def main():
     if sys.argv[1:] == ["--expect-unavailable"]:
         wait_status("/readyz", 503)
@@ -402,6 +511,7 @@ def main():
     vacancy_flow()
     response_flow()
     order_flow()
+    catalog_flow()
 
     print("PASS: readiness, registration, stable identity, cookie, duplicate, login, invalid credentials, validation, public profile, own sessions, refresh, logout")
 
