@@ -188,6 +188,9 @@ def response_flow():
     assert code == 201, (code, other_draft)
     code, _, body = request(f"/vacancies/{other_draft['id']}/responses", {"cover_letter": "hi"}, cookie=candidate)
     assert code == 404, (code, body)
+    # The author can never respond to their own vacancy.
+    code, _, body = request(f"/vacancies/{vacancy_id}/responses", {"cover_letter": "hi"}, cookie=author)
+    assert code == 400 and "own vacancy" in body["error"], (code, body)
 
     # The candidate responds with a contact channel; a repeat is a 409.
     reply = {"cover_letter": "Пять лет Go, профиль по ссылке.", "contact": "@smoke-candidate"}
@@ -275,7 +278,10 @@ def order_flow():
     code, _, body = request(f"/orders/{order_id}/proposals", proposal, cookie=executor)
     assert code == 409 and "active proposal" in body["error"], (code, body)
 
-    # The author reads the proposals; a stranger and the anonymous get 404/401.
+    # The author can never propose for their own order; a stranger and the
+    # anonymous get 404/401 on the proposal list.
+    code, _, body = request(f"/orders/{order_id}/proposals", proposal, cookie=customer)
+    assert code == 400 and "own order" in body["error"], (code, body)
     code, _, body = request(f"/orders/{order_id}/proposals", cookie=customer)
     assert code == 200 and len(body["proposals"]) == 1, (code, body)
     _, stranger, _ = register_account("smoke-stranger3")
@@ -294,10 +300,13 @@ def order_flow():
     code, _, again = request(f"/orders/{order_id}/proposals", proposal, cookie=executor)
     assert code == 201 and again["id"] != prop["id"], (code, again)
 
-    # Close is terminal; own list shows every status.
+    # Close is terminal: the order leaves the public view and stops accepting
+    # proposals (the same undisclosing 404 as a draft).
     code, _, body = request(f"/orders/{order_id}/close", cookie=customer, method="POST")
     assert code == 200 and body["status"] == "closed", (code, body)
     assert request(f"/orders/{order_id}")[0] == 404, "closed order must not be public"
+    code, _, body = request(f"/orders/{order_id}/proposals", proposal, cookie=executor)
+    assert code == 404, (code, body)
     code, _, body = request("/my/orders", cookie=customer)
     assert code == 200 and [o["id"] for o in body["orders"]] == [order_id], (code, body)
 
