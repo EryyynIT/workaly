@@ -47,23 +47,23 @@ func scanResponse(row rowScanner) (*jobpb.VacancyResponse, error) {
 	return &r, nil
 }
 
-// lookupOwnableVacancy resolves the vacancy for an owner-scoped response
-// operation. A stranger and a missing vacancy get the same 404, so the
-// existence of a draft is never disclosed through the responses API.
-func (s *jobService) lookupOwnableVacancy(ctx context.Context, vacancyID, actor string) (status_ string, err error) {
+// requireOwnVacancy verifies that the vacancy belongs to the actor. A
+// stranger and a missing vacancy get the same 404, so the existence of a
+// draft is never disclosed through the responses API.
+func (s *jobService) requireOwnVacancy(ctx context.Context, vacancyID, actor string) error {
 	var author string
-	err = s.db.QueryRowContext(ctx, `SELECT author_user_id, status FROM vacancies WHERE id = $1`, vacancyID).
-		Scan(&author, &status_)
+	err := s.db.QueryRowContext(ctx, `SELECT author_user_id FROM vacancies WHERE id = $1`, vacancyID).
+		Scan(&author)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", notFound()
+		return notFound()
 	}
 	if err != nil {
-		return "", mapDBError(err)
+		return mapDBError(err)
 	}
 	if author != actor {
-		return "", notFound()
+		return notFound()
 	}
-	return status_, nil
+	return nil
 }
 
 func (s *jobService) CreateVacancyResponse(ctx context.Context, req *jobpb.CreateVacancyResponseRequest) (*jobpb.VacancyResponse, error) {
@@ -129,7 +129,7 @@ func (s *jobService) ListVacancyResponses(ctx context.Context, req *jobpb.ListVa
 	if pageSize < 0 || pageSize > 50 {
 		return nil, invalid("page_size must be between 1 and 50")
 	}
-	if _, err := s.lookupOwnableVacancy(ctx, req.VacancyId, req.ActorUserId); err != nil {
+	if err := s.requireOwnVacancy(ctx, req.VacancyId, req.ActorUserId); err != nil {
 		return nil, err
 	}
 
