@@ -51,6 +51,10 @@ service TaskService {
   rpc WithdrawOrderProposal(WithdrawOrderProposalRequest) returns (OrderProposal);
   // Reads the actor's own active proposal for an order.
   rpc GetMyOrderProposal(GetMyOrderProposalRequest) returns (OrderProposal);
+  // Public catalog: published orders only, newest first, keyset by
+  // (published_at, id). Anonymous callers get the same view as logged-in
+  // users; there is no actor in the request.
+  rpc ListPublishedOrders(ListPublishedOrdersRequest) returns (ListPublishedOrdersResponse);
 }
 
 message Order {
@@ -118,6 +122,26 @@ message ListMyOrdersRequest {
 }
 
 message ListMyOrdersResponse {
+  repeated Order orders = 1;
+  // Empty when there are no more pages.
+  string next_page_token = 2;
+}
+
+message ListPublishedOrdersRequest {
+  // Opaque cursor returned by the previous response; empty starts over.
+  string page_token = 1;
+  // 1..50; 0 selects the server default.
+  int32 page_size = 2;
+  // Optional filters; empty string means "no filter". Budget bounds apply to
+  // the order budget directly (it is a single amount, not a range).
+  string budget_type = 3;  // fixed | hourly
+  string budget_min = 4;   // decimal string, budget_amount >= this
+  string budget_max = 5;   // decimal string, budget_amount <= this
+  // Substring match against the title, case-insensitive (ILIKE).
+  string title_contains = 6;
+}
+
+message ListPublishedOrdersResponse {
   repeated Order orders = 1;
   // Empty when there are no more pages.
   string next_page_token = 2;

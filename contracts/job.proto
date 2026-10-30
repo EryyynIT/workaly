@@ -50,6 +50,10 @@ service JobService {
   rpc WithdrawVacancyResponse(WithdrawVacancyResponseRequest) returns (VacancyResponse);
   // Reads the actor's own active response to a vacancy.
   rpc GetMyVacancyResponse(GetMyVacancyResponseRequest) returns (VacancyResponse);
+  // Public catalog: published vacancies only, newest first, keyset by
+  // (published_at, id). Anonymous callers get the same view as logged-in
+  // users; there is no actor in the request.
+  rpc ListPublishedVacancies(ListPublishedVacanciesRequest) returns (ListPublishedVacanciesResponse);
 }
 
 // VacancyResponse is the full response record; which fields of it a caller
@@ -169,6 +173,28 @@ message ListMyVacanciesRequest {
 }
 
 message ListMyVacanciesResponse {
+  repeated Vacancy vacancies = 1;
+  // Empty when there are no more pages.
+  string next_page_token = 2;
+}
+
+message ListPublishedVacanciesRequest {
+  // Opaque cursor returned by the previous response; empty starts over.
+  string page_token = 1;
+  // 1..50; 0 selects the server default.
+  int32 page_size = 2;
+  // Optional filters; empty string means "no filter". Salary bounds apply to
+  // the vacancy's own range: salary_min must be >= salary_min_from,
+  // salary_max must be <= salary_max.
+  string employment_type = 3;  // one of the documented values
+  string work_format = 4;
+  string salary_min_from = 5;  // decimal string
+  string salary_max_to = 6;
+  // Substring match against the title, case-insensitive (ILIKE).
+  string title_contains = 7;
+}
+
+message ListPublishedVacanciesResponse {
   repeated Vacancy vacancies = 1;
   // Empty when there are no more pages.
   string next_page_token = 2;

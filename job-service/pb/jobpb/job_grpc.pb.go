@@ -30,6 +30,7 @@ const (
 	JobService_ListVacancyResponses_FullMethodName    = "/job.JobService/ListVacancyResponses"
 	JobService_WithdrawVacancyResponse_FullMethodName = "/job.JobService/WithdrawVacancyResponse"
 	JobService_GetMyVacancyResponse_FullMethodName    = "/job.JobService/GetMyVacancyResponse"
+	JobService_ListPublishedVacancies_FullMethodName  = "/job.JobService/ListPublishedVacancies"
 )
 
 // JobServiceClient is the client API for JobService service.
@@ -80,6 +81,10 @@ type JobServiceClient interface {
 	WithdrawVacancyResponse(ctx context.Context, in *WithdrawVacancyResponseRequest, opts ...grpc.CallOption) (*VacancyResponse, error)
 	// Reads the actor's own active response to a vacancy.
 	GetMyVacancyResponse(ctx context.Context, in *GetMyVacancyResponseRequest, opts ...grpc.CallOption) (*VacancyResponse, error)
+	// Public catalog: published vacancies only, newest first, keyset by
+	// (published_at, id). Anonymous callers get the same view as logged-in
+	// users; there is no actor in the request.
+	ListPublishedVacancies(ctx context.Context, in *ListPublishedVacanciesRequest, opts ...grpc.CallOption) (*ListPublishedVacanciesResponse, error)
 }
 
 type jobServiceClient struct {
@@ -200,6 +205,16 @@ func (c *jobServiceClient) GetMyVacancyResponse(ctx context.Context, in *GetMyVa
 	return out, nil
 }
 
+func (c *jobServiceClient) ListPublishedVacancies(ctx context.Context, in *ListPublishedVacanciesRequest, opts ...grpc.CallOption) (*ListPublishedVacanciesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPublishedVacanciesResponse)
+	err := c.cc.Invoke(ctx, JobService_ListPublishedVacancies_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // JobServiceServer is the server API for JobService service.
 // All implementations must embed UnimplementedJobServiceServer
 // for forward compatibility.
@@ -248,6 +263,10 @@ type JobServiceServer interface {
 	WithdrawVacancyResponse(context.Context, *WithdrawVacancyResponseRequest) (*VacancyResponse, error)
 	// Reads the actor's own active response to a vacancy.
 	GetMyVacancyResponse(context.Context, *GetMyVacancyResponseRequest) (*VacancyResponse, error)
+	// Public catalog: published vacancies only, newest first, keyset by
+	// (published_at, id). Anonymous callers get the same view as logged-in
+	// users; there is no actor in the request.
+	ListPublishedVacancies(context.Context, *ListPublishedVacanciesRequest) (*ListPublishedVacanciesResponse, error)
 	mustEmbedUnimplementedJobServiceServer()
 }
 
@@ -290,6 +309,9 @@ func (UnimplementedJobServiceServer) WithdrawVacancyResponse(context.Context, *W
 }
 func (UnimplementedJobServiceServer) GetMyVacancyResponse(context.Context, *GetMyVacancyResponseRequest) (*VacancyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMyVacancyResponse not implemented")
+}
+func (UnimplementedJobServiceServer) ListPublishedVacancies(context.Context, *ListPublishedVacanciesRequest) (*ListPublishedVacanciesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListPublishedVacancies not implemented")
 }
 func (UnimplementedJobServiceServer) mustEmbedUnimplementedJobServiceServer() {}
 func (UnimplementedJobServiceServer) testEmbeddedByValue()                    {}
@@ -510,6 +532,24 @@ func _JobService_GetMyVacancyResponse_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _JobService_ListPublishedVacancies_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPublishedVacanciesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobServiceServer).ListPublishedVacancies(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobService_ListPublishedVacancies_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobServiceServer).ListPublishedVacancies(ctx, req.(*ListPublishedVacanciesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // JobService_ServiceDesc is the grpc.ServiceDesc for JobService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -560,6 +600,10 @@ var JobService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetMyVacancyResponse",
 			Handler:    _JobService_GetMyVacancyResponse_Handler,
+		},
+		{
+			MethodName: "ListPublishedVacancies",
+			Handler:    _JobService_ListPublishedVacancies_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

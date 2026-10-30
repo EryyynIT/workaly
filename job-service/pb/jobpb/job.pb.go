@@ -1096,6 +1096,157 @@ func (x *ListMyVacanciesResponse) GetNextPageToken() string {
 	return ""
 }
 
+type ListPublishedVacanciesRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Opaque cursor returned by the previous response; empty starts over.
+	PageToken string `protobuf:"bytes,1,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	// 1..50; 0 selects the server default.
+	PageSize int32 `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// Optional filters; empty string means "no filter". Salary bounds apply to
+	// the vacancy's own range: salary_min must be >= salary_min_from,
+	// salary_max must be <= salary_max.
+	EmploymentType string `protobuf:"bytes,3,opt,name=employment_type,json=employmentType,proto3" json:"employment_type,omitempty"` // one of the documented values
+	WorkFormat     string `protobuf:"bytes,4,opt,name=work_format,json=workFormat,proto3" json:"work_format,omitempty"`
+	SalaryMinFrom  string `protobuf:"bytes,5,opt,name=salary_min_from,json=salaryMinFrom,proto3" json:"salary_min_from,omitempty"` // decimal string
+	SalaryMaxTo    string `protobuf:"bytes,6,opt,name=salary_max_to,json=salaryMaxTo,proto3" json:"salary_max_to,omitempty"`
+	// Substring match against the title, case-insensitive (ILIKE).
+	TitleContains string `protobuf:"bytes,7,opt,name=title_contains,json=titleContains,proto3" json:"title_contains,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPublishedVacanciesRequest) Reset() {
+	*x = ListPublishedVacanciesRequest{}
+	mi := &file_job_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPublishedVacanciesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPublishedVacanciesRequest) ProtoMessage() {}
+
+func (x *ListPublishedVacanciesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_job_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPublishedVacanciesRequest.ProtoReflect.Descriptor instead.
+func (*ListPublishedVacanciesRequest) Descriptor() ([]byte, []int) {
+	return file_job_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ListPublishedVacanciesRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+func (x *ListPublishedVacanciesRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListPublishedVacanciesRequest) GetEmploymentType() string {
+	if x != nil {
+		return x.EmploymentType
+	}
+	return ""
+}
+
+func (x *ListPublishedVacanciesRequest) GetWorkFormat() string {
+	if x != nil {
+		return x.WorkFormat
+	}
+	return ""
+}
+
+func (x *ListPublishedVacanciesRequest) GetSalaryMinFrom() string {
+	if x != nil {
+		return x.SalaryMinFrom
+	}
+	return ""
+}
+
+func (x *ListPublishedVacanciesRequest) GetSalaryMaxTo() string {
+	if x != nil {
+		return x.SalaryMaxTo
+	}
+	return ""
+}
+
+func (x *ListPublishedVacanciesRequest) GetTitleContains() string {
+	if x != nil {
+		return x.TitleContains
+	}
+	return ""
+}
+
+type ListPublishedVacanciesResponse struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Vacancies []*Vacancy             `protobuf:"bytes,1,rep,name=vacancies,proto3" json:"vacancies,omitempty"`
+	// Empty when there are no more pages.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPublishedVacanciesResponse) Reset() {
+	*x = ListPublishedVacanciesResponse{}
+	mi := &file_job_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPublishedVacanciesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPublishedVacanciesResponse) ProtoMessage() {}
+
+func (x *ListPublishedVacanciesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_job_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPublishedVacanciesResponse.ProtoReflect.Descriptor instead.
+func (*ListPublishedVacanciesResponse) Descriptor() ([]byte, []int) {
+	return file_job_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ListPublishedVacanciesResponse) GetVacancies() []*Vacancy {
+	if x != nil {
+		return x.Vacancies
+	}
+	return nil
+}
+
+func (x *ListPublishedVacanciesResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
 type DeleteDraftRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ActorUserId   string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
@@ -1106,7 +1257,7 @@ type DeleteDraftRequest struct {
 
 func (x *DeleteDraftRequest) Reset() {
 	*x = DeleteDraftRequest{}
-	mi := &file_job_proto_msgTypes[14]
+	mi := &file_job_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1118,7 +1269,7 @@ func (x *DeleteDraftRequest) String() string {
 func (*DeleteDraftRequest) ProtoMessage() {}
 
 func (x *DeleteDraftRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_job_proto_msgTypes[14]
+	mi := &file_job_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1131,7 +1282,7 @@ func (x *DeleteDraftRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteDraftRequest.ProtoReflect.Descriptor instead.
 func (*DeleteDraftRequest) Descriptor() ([]byte, []int) {
-	return file_job_proto_rawDescGZIP(), []int{14}
+	return file_job_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *DeleteDraftRequest) GetActorUserId() string {
@@ -1262,11 +1413,24 @@ const file_job_proto_rawDesc = "" +
 	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\"m\n" +
 	"\x17ListMyVacanciesResponse\x12*\n" +
 	"\tvacancies\x18\x01 \x03(\v2\f.job.VacancyR\tvacancies\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x98\x02\n" +
+	"\x1dListPublishedVacanciesRequest\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x01 \x01(\tR\tpageToken\x12\x1b\n" +
+	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12'\n" +
+	"\x0femployment_type\x18\x03 \x01(\tR\x0eemploymentType\x12\x1f\n" +
+	"\vwork_format\x18\x04 \x01(\tR\n" +
+	"workFormat\x12&\n" +
+	"\x0fsalary_min_from\x18\x05 \x01(\tR\rsalaryMinFrom\x12\"\n" +
+	"\rsalary_max_to\x18\x06 \x01(\tR\vsalaryMaxTo\x12%\n" +
+	"\x0etitle_contains\x18\a \x01(\tR\rtitleContains\"t\n" +
+	"\x1eListPublishedVacanciesResponse\x12*\n" +
+	"\tvacancies\x18\x01 \x03(\v2\f.job.VacancyR\tvacancies\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"W\n" +
 	"\x12DeleteDraftRequest\x12\"\n" +
 	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x1d\n" +
 	"\n" +
-	"vacancy_id\x18\x02 \x01(\tR\tvacancyId2\x81\x06\n" +
+	"vacancy_id\x18\x02 \x01(\tR\tvacancyId2\xe4\x06\n" +
 	"\n" +
 	"JobService\x128\n" +
 	"\rCreateVacancy\x12\x19.job.CreateVacancyRequest\x1a\f.job.Vacancy\x122\n" +
@@ -1280,7 +1444,8 @@ const file_job_proto_rawDesc = "" +
 	"\x15CreateVacancyResponse\x12!.job.CreateVacancyResponseRequest\x1a\x14.job.VacancyResponse\x12[\n" +
 	"\x14ListVacancyResponses\x12 .job.ListVacancyResponsesRequest\x1a!.job.ListVacancyResponsesResponse\x12T\n" +
 	"\x17WithdrawVacancyResponse\x12#.job.WithdrawVacancyResponseRequest\x1a\x14.job.VacancyResponse\x12N\n" +
-	"\x14GetMyVacancyResponse\x12 .job.GetMyVacancyResponseRequest\x1a\x14.job.VacancyResponseB3Z1github.com/EryyynIT/workaly/auth-service/pb/jobpbb\x06proto3"
+	"\x14GetMyVacancyResponse\x12 .job.GetMyVacancyResponseRequest\x1a\x14.job.VacancyResponse\x12a\n" +
+	"\x16ListPublishedVacancies\x12\".job.ListPublishedVacanciesRequest\x1a#.job.ListPublishedVacanciesResponseB3Z1github.com/EryyynIT/workaly/auth-service/pb/jobpbb\x06proto3"
 
 var (
 	file_job_proto_rawDescOnce sync.Once
@@ -1294,7 +1459,7 @@ func file_job_proto_rawDescGZIP() []byte {
 	return file_job_proto_rawDescData
 }
 
-var file_job_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_job_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_job_proto_goTypes = []any{
 	(*VacancyResponse)(nil),                // 0: job.VacancyResponse
 	(*CreateVacancyResponseRequest)(nil),   // 1: job.CreateVacancyResponseRequest
@@ -1310,45 +1475,50 @@ var file_job_proto_goTypes = []any{
 	(*CloseVacancyRequest)(nil),            // 11: job.CloseVacancyRequest
 	(*ListMyVacanciesRequest)(nil),         // 12: job.ListMyVacanciesRequest
 	(*ListMyVacanciesResponse)(nil),        // 13: job.ListMyVacanciesResponse
-	(*DeleteDraftRequest)(nil),             // 14: job.DeleteDraftRequest
-	(*timestamppb.Timestamp)(nil),          // 15: google.protobuf.Timestamp
+	(*ListPublishedVacanciesRequest)(nil),  // 14: job.ListPublishedVacanciesRequest
+	(*ListPublishedVacanciesResponse)(nil), // 15: job.ListPublishedVacanciesResponse
+	(*DeleteDraftRequest)(nil),             // 16: job.DeleteDraftRequest
+	(*timestamppb.Timestamp)(nil),          // 17: google.protobuf.Timestamp
 }
 var file_job_proto_depIdxs = []int32{
-	15, // 0: job.VacancyResponse.created_at:type_name -> google.protobuf.Timestamp
-	15, // 1: job.VacancyResponse.withdrawn_at:type_name -> google.protobuf.Timestamp
+	17, // 0: job.VacancyResponse.created_at:type_name -> google.protobuf.Timestamp
+	17, // 1: job.VacancyResponse.withdrawn_at:type_name -> google.protobuf.Timestamp
 	0,  // 2: job.ListVacancyResponsesResponse.responses:type_name -> job.VacancyResponse
-	15, // 3: job.Vacancy.created_at:type_name -> google.protobuf.Timestamp
-	15, // 4: job.Vacancy.updated_at:type_name -> google.protobuf.Timestamp
-	15, // 5: job.Vacancy.published_at:type_name -> google.protobuf.Timestamp
-	15, // 6: job.Vacancy.closed_at:type_name -> google.protobuf.Timestamp
+	17, // 3: job.Vacancy.created_at:type_name -> google.protobuf.Timestamp
+	17, // 4: job.Vacancy.updated_at:type_name -> google.protobuf.Timestamp
+	17, // 5: job.Vacancy.published_at:type_name -> google.protobuf.Timestamp
+	17, // 6: job.Vacancy.closed_at:type_name -> google.protobuf.Timestamp
 	6,  // 7: job.ListMyVacanciesResponse.vacancies:type_name -> job.Vacancy
-	7,  // 8: job.JobService.CreateVacancy:input_type -> job.CreateVacancyRequest
-	8,  // 9: job.JobService.GetVacancy:input_type -> job.GetVacancyRequest
-	9,  // 10: job.JobService.UpdateVacancy:input_type -> job.UpdateVacancyRequest
-	10, // 11: job.JobService.PublishVacancy:input_type -> job.PublishVacancyRequest
-	11, // 12: job.JobService.CloseVacancy:input_type -> job.CloseVacancyRequest
-	12, // 13: job.JobService.ListMyVacancies:input_type -> job.ListMyVacanciesRequest
-	14, // 14: job.JobService.DeleteDraft:input_type -> job.DeleteDraftRequest
-	1,  // 15: job.JobService.CreateVacancyResponse:input_type -> job.CreateVacancyResponseRequest
-	2,  // 16: job.JobService.ListVacancyResponses:input_type -> job.ListVacancyResponsesRequest
-	4,  // 17: job.JobService.WithdrawVacancyResponse:input_type -> job.WithdrawVacancyResponseRequest
-	5,  // 18: job.JobService.GetMyVacancyResponse:input_type -> job.GetMyVacancyResponseRequest
-	6,  // 19: job.JobService.CreateVacancy:output_type -> job.Vacancy
-	6,  // 20: job.JobService.GetVacancy:output_type -> job.Vacancy
-	6,  // 21: job.JobService.UpdateVacancy:output_type -> job.Vacancy
-	6,  // 22: job.JobService.PublishVacancy:output_type -> job.Vacancy
-	6,  // 23: job.JobService.CloseVacancy:output_type -> job.Vacancy
-	13, // 24: job.JobService.ListMyVacancies:output_type -> job.ListMyVacanciesResponse
-	6,  // 25: job.JobService.DeleteDraft:output_type -> job.Vacancy
-	0,  // 26: job.JobService.CreateVacancyResponse:output_type -> job.VacancyResponse
-	3,  // 27: job.JobService.ListVacancyResponses:output_type -> job.ListVacancyResponsesResponse
-	0,  // 28: job.JobService.WithdrawVacancyResponse:output_type -> job.VacancyResponse
-	0,  // 29: job.JobService.GetMyVacancyResponse:output_type -> job.VacancyResponse
-	19, // [19:30] is the sub-list for method output_type
-	8,  // [8:19] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	6,  // 8: job.ListPublishedVacanciesResponse.vacancies:type_name -> job.Vacancy
+	7,  // 9: job.JobService.CreateVacancy:input_type -> job.CreateVacancyRequest
+	8,  // 10: job.JobService.GetVacancy:input_type -> job.GetVacancyRequest
+	9,  // 11: job.JobService.UpdateVacancy:input_type -> job.UpdateVacancyRequest
+	10, // 12: job.JobService.PublishVacancy:input_type -> job.PublishVacancyRequest
+	11, // 13: job.JobService.CloseVacancy:input_type -> job.CloseVacancyRequest
+	12, // 14: job.JobService.ListMyVacancies:input_type -> job.ListMyVacanciesRequest
+	16, // 15: job.JobService.DeleteDraft:input_type -> job.DeleteDraftRequest
+	1,  // 16: job.JobService.CreateVacancyResponse:input_type -> job.CreateVacancyResponseRequest
+	2,  // 17: job.JobService.ListVacancyResponses:input_type -> job.ListVacancyResponsesRequest
+	4,  // 18: job.JobService.WithdrawVacancyResponse:input_type -> job.WithdrawVacancyResponseRequest
+	5,  // 19: job.JobService.GetMyVacancyResponse:input_type -> job.GetMyVacancyResponseRequest
+	14, // 20: job.JobService.ListPublishedVacancies:input_type -> job.ListPublishedVacanciesRequest
+	6,  // 21: job.JobService.CreateVacancy:output_type -> job.Vacancy
+	6,  // 22: job.JobService.GetVacancy:output_type -> job.Vacancy
+	6,  // 23: job.JobService.UpdateVacancy:output_type -> job.Vacancy
+	6,  // 24: job.JobService.PublishVacancy:output_type -> job.Vacancy
+	6,  // 25: job.JobService.CloseVacancy:output_type -> job.Vacancy
+	13, // 26: job.JobService.ListMyVacancies:output_type -> job.ListMyVacanciesResponse
+	6,  // 27: job.JobService.DeleteDraft:output_type -> job.Vacancy
+	0,  // 28: job.JobService.CreateVacancyResponse:output_type -> job.VacancyResponse
+	3,  // 29: job.JobService.ListVacancyResponses:output_type -> job.ListVacancyResponsesResponse
+	0,  // 30: job.JobService.WithdrawVacancyResponse:output_type -> job.VacancyResponse
+	0,  // 31: job.JobService.GetMyVacancyResponse:output_type -> job.VacancyResponse
+	15, // 32: job.JobService.ListPublishedVacancies:output_type -> job.ListPublishedVacanciesResponse
+	21, // [21:33] is the sub-list for method output_type
+	9,  // [9:21] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_job_proto_init() }
@@ -1362,7 +1532,7 @@ func file_job_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_job_proto_rawDesc), len(file_job_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

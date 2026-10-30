@@ -30,6 +30,7 @@ const (
 	TaskService_ListOrderProposals_FullMethodName    = "/task.TaskService/ListOrderProposals"
 	TaskService_WithdrawOrderProposal_FullMethodName = "/task.TaskService/WithdrawOrderProposal"
 	TaskService_GetMyOrderProposal_FullMethodName    = "/task.TaskService/GetMyOrderProposal"
+	TaskService_ListPublishedOrders_FullMethodName   = "/task.TaskService/ListPublishedOrders"
 )
 
 // TaskServiceClient is the client API for TaskService service.
@@ -81,6 +82,10 @@ type TaskServiceClient interface {
 	WithdrawOrderProposal(ctx context.Context, in *WithdrawOrderProposalRequest, opts ...grpc.CallOption) (*OrderProposal, error)
 	// Reads the actor's own active proposal for an order.
 	GetMyOrderProposal(ctx context.Context, in *GetMyOrderProposalRequest, opts ...grpc.CallOption) (*OrderProposal, error)
+	// Public catalog: published orders only, newest first, keyset by
+	// (published_at, id). Anonymous callers get the same view as logged-in
+	// users; there is no actor in the request.
+	ListPublishedOrders(ctx context.Context, in *ListPublishedOrdersRequest, opts ...grpc.CallOption) (*ListPublishedOrdersResponse, error)
 }
 
 type taskServiceClient struct {
@@ -201,6 +206,16 @@ func (c *taskServiceClient) GetMyOrderProposal(ctx context.Context, in *GetMyOrd
 	return out, nil
 }
 
+func (c *taskServiceClient) ListPublishedOrders(ctx context.Context, in *ListPublishedOrdersRequest, opts ...grpc.CallOption) (*ListPublishedOrdersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPublishedOrdersResponse)
+	err := c.cc.Invoke(ctx, TaskService_ListPublishedOrders_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // TaskServiceServer is the server API for TaskService service.
 // All implementations must embed UnimplementedTaskServiceServer
 // for forward compatibility.
@@ -250,6 +265,10 @@ type TaskServiceServer interface {
 	WithdrawOrderProposal(context.Context, *WithdrawOrderProposalRequest) (*OrderProposal, error)
 	// Reads the actor's own active proposal for an order.
 	GetMyOrderProposal(context.Context, *GetMyOrderProposalRequest) (*OrderProposal, error)
+	// Public catalog: published orders only, newest first, keyset by
+	// (published_at, id). Anonymous callers get the same view as logged-in
+	// users; there is no actor in the request.
+	ListPublishedOrders(context.Context, *ListPublishedOrdersRequest) (*ListPublishedOrdersResponse, error)
 	mustEmbedUnimplementedTaskServiceServer()
 }
 
@@ -292,6 +311,9 @@ func (UnimplementedTaskServiceServer) WithdrawOrderProposal(context.Context, *Wi
 }
 func (UnimplementedTaskServiceServer) GetMyOrderProposal(context.Context, *GetMyOrderProposalRequest) (*OrderProposal, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMyOrderProposal not implemented")
+}
+func (UnimplementedTaskServiceServer) ListPublishedOrders(context.Context, *ListPublishedOrdersRequest) (*ListPublishedOrdersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListPublishedOrders not implemented")
 }
 func (UnimplementedTaskServiceServer) mustEmbedUnimplementedTaskServiceServer() {}
 func (UnimplementedTaskServiceServer) testEmbeddedByValue()                     {}
@@ -512,6 +534,24 @@ func _TaskService_GetMyOrderProposal_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TaskService_ListPublishedOrders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPublishedOrdersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskServiceServer).ListPublishedOrders(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskService_ListPublishedOrders_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskServiceServer).ListPublishedOrders(ctx, req.(*ListPublishedOrdersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // TaskService_ServiceDesc is the grpc.ServiceDesc for TaskService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -562,6 +602,10 @@ var TaskService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetMyOrderProposal",
 			Handler:    _TaskService_GetMyOrderProposal_Handler,
+		},
+		{
+			MethodName: "ListPublishedOrders",
+			Handler:    _TaskService_ListPublishedOrders_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

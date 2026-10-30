@@ -643,6 +643,148 @@ func (x *ListMyOrdersResponse) GetNextPageToken() string {
 	return ""
 }
 
+type ListPublishedOrdersRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Opaque cursor returned by the previous response; empty starts over.
+	PageToken string `protobuf:"bytes,1,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	// 1..50; 0 selects the server default.
+	PageSize int32 `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// Optional filters; empty string means "no filter". Budget bounds apply to
+	// the order budget directly (it is a single amount, not a range).
+	BudgetType string `protobuf:"bytes,3,opt,name=budget_type,json=budgetType,proto3" json:"budget_type,omitempty"` // fixed | hourly
+	BudgetMin  string `protobuf:"bytes,4,opt,name=budget_min,json=budgetMin,proto3" json:"budget_min,omitempty"`    // decimal string, budget_amount >= this
+	BudgetMax  string `protobuf:"bytes,5,opt,name=budget_max,json=budgetMax,proto3" json:"budget_max,omitempty"`    // decimal string, budget_amount <= this
+	// Substring match against the title, case-insensitive (ILIKE).
+	TitleContains string `protobuf:"bytes,6,opt,name=title_contains,json=titleContains,proto3" json:"title_contains,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPublishedOrdersRequest) Reset() {
+	*x = ListPublishedOrdersRequest{}
+	mi := &file_task_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPublishedOrdersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPublishedOrdersRequest) ProtoMessage() {}
+
+func (x *ListPublishedOrdersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_task_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPublishedOrdersRequest.ProtoReflect.Descriptor instead.
+func (*ListPublishedOrdersRequest) Descriptor() ([]byte, []int) {
+	return file_task_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ListPublishedOrdersRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+func (x *ListPublishedOrdersRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListPublishedOrdersRequest) GetBudgetType() string {
+	if x != nil {
+		return x.BudgetType
+	}
+	return ""
+}
+
+func (x *ListPublishedOrdersRequest) GetBudgetMin() string {
+	if x != nil {
+		return x.BudgetMin
+	}
+	return ""
+}
+
+func (x *ListPublishedOrdersRequest) GetBudgetMax() string {
+	if x != nil {
+		return x.BudgetMax
+	}
+	return ""
+}
+
+func (x *ListPublishedOrdersRequest) GetTitleContains() string {
+	if x != nil {
+		return x.TitleContains
+	}
+	return ""
+}
+
+type ListPublishedOrdersResponse struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Orders []*Order               `protobuf:"bytes,1,rep,name=orders,proto3" json:"orders,omitempty"`
+	// Empty when there are no more pages.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPublishedOrdersResponse) Reset() {
+	*x = ListPublishedOrdersResponse{}
+	mi := &file_task_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPublishedOrdersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPublishedOrdersResponse) ProtoMessage() {}
+
+func (x *ListPublishedOrdersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_task_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPublishedOrdersResponse.ProtoReflect.Descriptor instead.
+func (*ListPublishedOrdersResponse) Descriptor() ([]byte, []int) {
+	return file_task_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ListPublishedOrdersResponse) GetOrders() []*Order {
+	if x != nil {
+		return x.Orders
+	}
+	return nil
+}
+
+func (x *ListPublishedOrdersResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
 type DeleteDraftRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ActorUserId   string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
@@ -653,7 +795,7 @@ type DeleteDraftRequest struct {
 
 func (x *DeleteDraftRequest) Reset() {
 	*x = DeleteDraftRequest{}
-	mi := &file_task_proto_msgTypes[8]
+	mi := &file_task_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -665,7 +807,7 @@ func (x *DeleteDraftRequest) String() string {
 func (*DeleteDraftRequest) ProtoMessage() {}
 
 func (x *DeleteDraftRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[8]
+	mi := &file_task_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -678,7 +820,7 @@ func (x *DeleteDraftRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteDraftRequest.ProtoReflect.Descriptor instead.
 func (*DeleteDraftRequest) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{8}
+	return file_task_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *DeleteDraftRequest) GetActorUserId() string {
@@ -716,7 +858,7 @@ type OrderProposal struct {
 
 func (x *OrderProposal) Reset() {
 	*x = OrderProposal{}
-	mi := &file_task_proto_msgTypes[9]
+	mi := &file_task_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -728,7 +870,7 @@ func (x *OrderProposal) String() string {
 func (*OrderProposal) ProtoMessage() {}
 
 func (x *OrderProposal) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[9]
+	mi := &file_task_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -741,7 +883,7 @@ func (x *OrderProposal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OrderProposal.ProtoReflect.Descriptor instead.
 func (*OrderProposal) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{9}
+	return file_task_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *OrderProposal) GetId() string {
@@ -828,7 +970,7 @@ type CreateOrderProposalRequest struct {
 
 func (x *CreateOrderProposalRequest) Reset() {
 	*x = CreateOrderProposalRequest{}
-	mi := &file_task_proto_msgTypes[10]
+	mi := &file_task_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -840,7 +982,7 @@ func (x *CreateOrderProposalRequest) String() string {
 func (*CreateOrderProposalRequest) ProtoMessage() {}
 
 func (x *CreateOrderProposalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[10]
+	mi := &file_task_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -853,7 +995,7 @@ func (x *CreateOrderProposalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateOrderProposalRequest.ProtoReflect.Descriptor instead.
 func (*CreateOrderProposalRequest) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{10}
+	return file_task_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CreateOrderProposalRequest) GetActorUserId() string {
@@ -911,7 +1053,7 @@ type ListOrderProposalsRequest struct {
 
 func (x *ListOrderProposalsRequest) Reset() {
 	*x = ListOrderProposalsRequest{}
-	mi := &file_task_proto_msgTypes[11]
+	mi := &file_task_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -923,7 +1065,7 @@ func (x *ListOrderProposalsRequest) String() string {
 func (*ListOrderProposalsRequest) ProtoMessage() {}
 
 func (x *ListOrderProposalsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[11]
+	mi := &file_task_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -936,7 +1078,7 @@ func (x *ListOrderProposalsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOrderProposalsRequest.ProtoReflect.Descriptor instead.
 func (*ListOrderProposalsRequest) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{11}
+	return file_task_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListOrderProposalsRequest) GetActorUserId() string {
@@ -977,7 +1119,7 @@ type ListOrderProposalsResponse struct {
 
 func (x *ListOrderProposalsResponse) Reset() {
 	*x = ListOrderProposalsResponse{}
-	mi := &file_task_proto_msgTypes[12]
+	mi := &file_task_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -989,7 +1131,7 @@ func (x *ListOrderProposalsResponse) String() string {
 func (*ListOrderProposalsResponse) ProtoMessage() {}
 
 func (x *ListOrderProposalsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[12]
+	mi := &file_task_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1002,7 +1144,7 @@ func (x *ListOrderProposalsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOrderProposalsResponse.ProtoReflect.Descriptor instead.
 func (*ListOrderProposalsResponse) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{12}
+	return file_task_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListOrderProposalsResponse) GetProposals() []*OrderProposal {
@@ -1030,7 +1172,7 @@ type WithdrawOrderProposalRequest struct {
 
 func (x *WithdrawOrderProposalRequest) Reset() {
 	*x = WithdrawOrderProposalRequest{}
-	mi := &file_task_proto_msgTypes[13]
+	mi := &file_task_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1042,7 +1184,7 @@ func (x *WithdrawOrderProposalRequest) String() string {
 func (*WithdrawOrderProposalRequest) ProtoMessage() {}
 
 func (x *WithdrawOrderProposalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[13]
+	mi := &file_task_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1055,7 +1197,7 @@ func (x *WithdrawOrderProposalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WithdrawOrderProposalRequest.ProtoReflect.Descriptor instead.
 func (*WithdrawOrderProposalRequest) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{13}
+	return file_task_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *WithdrawOrderProposalRequest) GetActorUserId() string {
@@ -1089,7 +1231,7 @@ type GetMyOrderProposalRequest struct {
 
 func (x *GetMyOrderProposalRequest) Reset() {
 	*x = GetMyOrderProposalRequest{}
-	mi := &file_task_proto_msgTypes[14]
+	mi := &file_task_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1101,7 +1243,7 @@ func (x *GetMyOrderProposalRequest) String() string {
 func (*GetMyOrderProposalRequest) ProtoMessage() {}
 
 func (x *GetMyOrderProposalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[14]
+	mi := &file_task_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1114,7 +1256,7 @@ func (x *GetMyOrderProposalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMyOrderProposalRequest.ProtoReflect.Descriptor instead.
 func (*GetMyOrderProposalRequest) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{14}
+	return file_task_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *GetMyOrderProposalRequest) GetActorUserId() string {
@@ -1192,6 +1334,20 @@ const file_task_proto_rawDesc = "" +
 	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\"c\n" +
 	"\x14ListMyOrdersResponse\x12#\n" +
 	"\x06orders\x18\x01 \x03(\v2\v.task.OrderR\x06orders\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xde\x01\n" +
+	"\x1aListPublishedOrdersRequest\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x01 \x01(\tR\tpageToken\x12\x1b\n" +
+	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1f\n" +
+	"\vbudget_type\x18\x03 \x01(\tR\n" +
+	"budgetType\x12\x1d\n" +
+	"\n" +
+	"budget_min\x18\x04 \x01(\tR\tbudgetMin\x12\x1d\n" +
+	"\n" +
+	"budget_max\x18\x05 \x01(\tR\tbudgetMax\x12%\n" +
+	"\x0etitle_contains\x18\x06 \x01(\tR\rtitleContains\"j\n" +
+	"\x1bListPublishedOrdersResponse\x12#\n" +
+	"\x06orders\x18\x01 \x03(\v2\v.task.OrderR\x06orders\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"S\n" +
 	"\x12DeleteDraftRequest\x12\"\n" +
 	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x19\n" +
@@ -1232,7 +1388,7 @@ const file_task_proto_rawDesc = "" +
 	"proposalId\"Z\n" +
 	"\x19GetMyOrderProposalRequest\x12\"\n" +
 	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x19\n" +
-	"\border_id\x18\x02 \x01(\tR\aorderId2\xd7\x05\n" +
+	"\border_id\x18\x02 \x01(\tR\aorderId2\xb3\x06\n" +
 	"\vTaskService\x124\n" +
 	"\vCreateOrder\x12\x18.task.CreateOrderRequest\x1a\v.task.Order\x12.\n" +
 	"\bGetOrder\x12\x15.task.GetOrderRequest\x1a\v.task.Order\x124\n" +
@@ -1245,7 +1401,8 @@ const file_task_proto_rawDesc = "" +
 	"\x13CreateOrderProposal\x12 .task.CreateOrderProposalRequest\x1a\x13.task.OrderProposal\x12W\n" +
 	"\x12ListOrderProposals\x12\x1f.task.ListOrderProposalsRequest\x1a .task.ListOrderProposalsResponse\x12P\n" +
 	"\x15WithdrawOrderProposal\x12\".task.WithdrawOrderProposalRequest\x1a\x13.task.OrderProposal\x12J\n" +
-	"\x12GetMyOrderProposal\x12\x1f.task.GetMyOrderProposalRequest\x1a\x13.task.OrderProposalB4Z2github.com/EryyynIT/workaly/auth-service/pb/taskpbb\x06proto3"
+	"\x12GetMyOrderProposal\x12\x1f.task.GetMyOrderProposalRequest\x1a\x13.task.OrderProposal\x12Z\n" +
+	"\x13ListPublishedOrders\x12 .task.ListPublishedOrdersRequest\x1a!.task.ListPublishedOrdersResponseB4Z2github.com/EryyynIT/workaly/auth-service/pb/taskpbb\x06proto3"
 
 var (
 	file_task_proto_rawDescOnce sync.Once
@@ -1259,7 +1416,7 @@ func file_task_proto_rawDescGZIP() []byte {
 	return file_task_proto_rawDescData
 }
 
-var file_task_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_task_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_task_proto_goTypes = []any{
 	(*Order)(nil),                        // 0: task.Order
 	(*CreateOrderRequest)(nil),           // 1: task.CreateOrderRequest
@@ -1269,51 +1426,56 @@ var file_task_proto_goTypes = []any{
 	(*CloseOrderRequest)(nil),            // 5: task.CloseOrderRequest
 	(*ListMyOrdersRequest)(nil),          // 6: task.ListMyOrdersRequest
 	(*ListMyOrdersResponse)(nil),         // 7: task.ListMyOrdersResponse
-	(*DeleteDraftRequest)(nil),           // 8: task.DeleteDraftRequest
-	(*OrderProposal)(nil),                // 9: task.OrderProposal
-	(*CreateOrderProposalRequest)(nil),   // 10: task.CreateOrderProposalRequest
-	(*ListOrderProposalsRequest)(nil),    // 11: task.ListOrderProposalsRequest
-	(*ListOrderProposalsResponse)(nil),   // 12: task.ListOrderProposalsResponse
-	(*WithdrawOrderProposalRequest)(nil), // 13: task.WithdrawOrderProposalRequest
-	(*GetMyOrderProposalRequest)(nil),    // 14: task.GetMyOrderProposalRequest
-	(*timestamppb.Timestamp)(nil),        // 15: google.protobuf.Timestamp
+	(*ListPublishedOrdersRequest)(nil),   // 8: task.ListPublishedOrdersRequest
+	(*ListPublishedOrdersResponse)(nil),  // 9: task.ListPublishedOrdersResponse
+	(*DeleteDraftRequest)(nil),           // 10: task.DeleteDraftRequest
+	(*OrderProposal)(nil),                // 11: task.OrderProposal
+	(*CreateOrderProposalRequest)(nil),   // 12: task.CreateOrderProposalRequest
+	(*ListOrderProposalsRequest)(nil),    // 13: task.ListOrderProposalsRequest
+	(*ListOrderProposalsResponse)(nil),   // 14: task.ListOrderProposalsResponse
+	(*WithdrawOrderProposalRequest)(nil), // 15: task.WithdrawOrderProposalRequest
+	(*GetMyOrderProposalRequest)(nil),    // 16: task.GetMyOrderProposalRequest
+	(*timestamppb.Timestamp)(nil),        // 17: google.protobuf.Timestamp
 }
 var file_task_proto_depIdxs = []int32{
-	15, // 0: task.Order.created_at:type_name -> google.protobuf.Timestamp
-	15, // 1: task.Order.updated_at:type_name -> google.protobuf.Timestamp
-	15, // 2: task.Order.published_at:type_name -> google.protobuf.Timestamp
-	15, // 3: task.Order.closed_at:type_name -> google.protobuf.Timestamp
+	17, // 0: task.Order.created_at:type_name -> google.protobuf.Timestamp
+	17, // 1: task.Order.updated_at:type_name -> google.protobuf.Timestamp
+	17, // 2: task.Order.published_at:type_name -> google.protobuf.Timestamp
+	17, // 3: task.Order.closed_at:type_name -> google.protobuf.Timestamp
 	0,  // 4: task.ListMyOrdersResponse.orders:type_name -> task.Order
-	15, // 5: task.OrderProposal.created_at:type_name -> google.protobuf.Timestamp
-	15, // 6: task.OrderProposal.withdrawn_at:type_name -> google.protobuf.Timestamp
-	9,  // 7: task.ListOrderProposalsResponse.proposals:type_name -> task.OrderProposal
-	1,  // 8: task.TaskService.CreateOrder:input_type -> task.CreateOrderRequest
-	2,  // 9: task.TaskService.GetOrder:input_type -> task.GetOrderRequest
-	3,  // 10: task.TaskService.UpdateOrder:input_type -> task.UpdateOrderRequest
-	4,  // 11: task.TaskService.PublishOrder:input_type -> task.PublishOrderRequest
-	5,  // 12: task.TaskService.CloseOrder:input_type -> task.CloseOrderRequest
-	6,  // 13: task.TaskService.ListMyOrders:input_type -> task.ListMyOrdersRequest
-	8,  // 14: task.TaskService.DeleteDraft:input_type -> task.DeleteDraftRequest
-	10, // 15: task.TaskService.CreateOrderProposal:input_type -> task.CreateOrderProposalRequest
-	11, // 16: task.TaskService.ListOrderProposals:input_type -> task.ListOrderProposalsRequest
-	13, // 17: task.TaskService.WithdrawOrderProposal:input_type -> task.WithdrawOrderProposalRequest
-	14, // 18: task.TaskService.GetMyOrderProposal:input_type -> task.GetMyOrderProposalRequest
-	0,  // 19: task.TaskService.CreateOrder:output_type -> task.Order
-	0,  // 20: task.TaskService.GetOrder:output_type -> task.Order
-	0,  // 21: task.TaskService.UpdateOrder:output_type -> task.Order
-	0,  // 22: task.TaskService.PublishOrder:output_type -> task.Order
-	0,  // 23: task.TaskService.CloseOrder:output_type -> task.Order
-	7,  // 24: task.TaskService.ListMyOrders:output_type -> task.ListMyOrdersResponse
-	0,  // 25: task.TaskService.DeleteDraft:output_type -> task.Order
-	9,  // 26: task.TaskService.CreateOrderProposal:output_type -> task.OrderProposal
-	12, // 27: task.TaskService.ListOrderProposals:output_type -> task.ListOrderProposalsResponse
-	9,  // 28: task.TaskService.WithdrawOrderProposal:output_type -> task.OrderProposal
-	9,  // 29: task.TaskService.GetMyOrderProposal:output_type -> task.OrderProposal
-	19, // [19:30] is the sub-list for method output_type
-	8,  // [8:19] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	0,  // 5: task.ListPublishedOrdersResponse.orders:type_name -> task.Order
+	17, // 6: task.OrderProposal.created_at:type_name -> google.protobuf.Timestamp
+	17, // 7: task.OrderProposal.withdrawn_at:type_name -> google.protobuf.Timestamp
+	11, // 8: task.ListOrderProposalsResponse.proposals:type_name -> task.OrderProposal
+	1,  // 9: task.TaskService.CreateOrder:input_type -> task.CreateOrderRequest
+	2,  // 10: task.TaskService.GetOrder:input_type -> task.GetOrderRequest
+	3,  // 11: task.TaskService.UpdateOrder:input_type -> task.UpdateOrderRequest
+	4,  // 12: task.TaskService.PublishOrder:input_type -> task.PublishOrderRequest
+	5,  // 13: task.TaskService.CloseOrder:input_type -> task.CloseOrderRequest
+	6,  // 14: task.TaskService.ListMyOrders:input_type -> task.ListMyOrdersRequest
+	10, // 15: task.TaskService.DeleteDraft:input_type -> task.DeleteDraftRequest
+	12, // 16: task.TaskService.CreateOrderProposal:input_type -> task.CreateOrderProposalRequest
+	13, // 17: task.TaskService.ListOrderProposals:input_type -> task.ListOrderProposalsRequest
+	15, // 18: task.TaskService.WithdrawOrderProposal:input_type -> task.WithdrawOrderProposalRequest
+	16, // 19: task.TaskService.GetMyOrderProposal:input_type -> task.GetMyOrderProposalRequest
+	8,  // 20: task.TaskService.ListPublishedOrders:input_type -> task.ListPublishedOrdersRequest
+	0,  // 21: task.TaskService.CreateOrder:output_type -> task.Order
+	0,  // 22: task.TaskService.GetOrder:output_type -> task.Order
+	0,  // 23: task.TaskService.UpdateOrder:output_type -> task.Order
+	0,  // 24: task.TaskService.PublishOrder:output_type -> task.Order
+	0,  // 25: task.TaskService.CloseOrder:output_type -> task.Order
+	7,  // 26: task.TaskService.ListMyOrders:output_type -> task.ListMyOrdersResponse
+	0,  // 27: task.TaskService.DeleteDraft:output_type -> task.Order
+	11, // 28: task.TaskService.CreateOrderProposal:output_type -> task.OrderProposal
+	14, // 29: task.TaskService.ListOrderProposals:output_type -> task.ListOrderProposalsResponse
+	11, // 30: task.TaskService.WithdrawOrderProposal:output_type -> task.OrderProposal
+	11, // 31: task.TaskService.GetMyOrderProposal:output_type -> task.OrderProposal
+	9,  // 32: task.TaskService.ListPublishedOrders:output_type -> task.ListPublishedOrdersResponse
+	21, // [21:33] is the sub-list for method output_type
+	9,  // [9:21] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_task_proto_init() }
@@ -1327,7 +1489,7 @@ func file_task_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_task_proto_rawDesc), len(file_task_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
