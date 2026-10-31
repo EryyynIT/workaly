@@ -32,6 +32,7 @@ type fakeVacancies struct {
 	lastGetActor   atomic.Value // string
 	lastRespond    atomic.Value // *jobpb.CreateVacancyResponseRequest
 	lastWithdraw   atomic.Value // *jobpb.WithdrawVacancyResponseRequest
+	lastTransition atomic.Value // the request of the last hiring pipeline RPC
 }
 
 func (f *fakeVacancies) CreateVacancy(_ context.Context, req *jobpb.CreateVacancyRequest, _ ...grpc.CallOption) (*jobpb.Vacancy, error) {
@@ -95,6 +96,36 @@ func (f *fakeVacancies) WithdrawVacancyResponse(_ context.Context, req *jobpb.Wi
 }
 
 func (f *fakeVacancies) GetMyVacancyResponse(_ context.Context, _ *jobpb.GetMyVacancyResponseRequest, _ ...grpc.CallOption) (*jobpb.VacancyResponse, error) {
+	return f.response, f.err
+}
+
+func (f *fakeVacancies) RejectVacancyResponse(_ context.Context, req *jobpb.RejectVacancyResponseRequest, _ ...grpc.CallOption) (*jobpb.VacancyResponse, error) {
+	f.lastTransition.Store(req)
+	return f.response, f.err
+}
+
+func (f *fakeVacancies) SendOffer(_ context.Context, req *jobpb.SendOfferRequest, _ ...grpc.CallOption) (*jobpb.VacancyResponse, error) {
+	f.lastTransition.Store(req)
+	return f.response, f.err
+}
+
+func (f *fakeVacancies) WithdrawOffer(_ context.Context, req *jobpb.WithdrawOfferRequest, _ ...grpc.CallOption) (*jobpb.VacancyResponse, error) {
+	f.lastTransition.Store(req)
+	return f.response, f.err
+}
+
+func (f *fakeVacancies) AcceptOffer(_ context.Context, req *jobpb.AcceptOfferRequest, _ ...grpc.CallOption) (*jobpb.VacancyResponse, error) {
+	f.lastTransition.Store(req)
+	return f.response, f.err
+}
+
+func (f *fakeVacancies) DeclineOffer(_ context.Context, req *jobpb.DeclineOfferRequest, _ ...grpc.CallOption) (*jobpb.VacancyResponse, error) {
+	f.lastTransition.Store(req)
+	return f.response, f.err
+}
+
+func (f *fakeVacancies) MarkHired(_ context.Context, req *jobpb.MarkHiredRequest, _ ...grpc.CallOption) (*jobpb.VacancyResponse, error) {
+	f.lastTransition.Store(req)
 	return f.response, f.err
 }
 
@@ -493,4 +524,138 @@ func TestGetMyVacancyResponseMapsNotFound(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("missing own response: %d", w.Code)
 	}
+}
+
+// TestHiringPipelineEdge covers the S3.1 offer cycle at the HTTP edge: the
+// actor and ids reach the RPC verbatim, the reason passes through on reject
+// and decline, and the views strip the reason meant for the other side.
+func TestHiringPipelineEdge(t *testing.T) {
+	vid := sampleVacancy().Id
+	rid := sampleResponse().Id
+	actor := fakeActor()
+
+	t.Run("reject carries the reason to the RPC", func(t *testing.T) {
+		app, _ := testApp()
+		fake := app.vacancies.(*fakeVacancies)
+		fake.response = sampleResponse()
+		fake.response.Status = "rejected"
+		fake.response.Reason = "мало опыта"
+
+		w := doJSON(app, http.MethodPost, "/vacancies/"+vid+"/responses/"+rid+"/reject",
+			`{"reason":"мало опыта"}`, sessionCookie(app, actor))
+		if w.Code != http.StatusOK {
+			t.Fatalf("reject: %d %s", w.Code, w.Body.String())
+		}
+		req, _ := fake.lastTransition.Load().(*jobpb.RejectVacancyResponseRequest)
+		if req == nil || req.ActorUserId != actor || req.VacancyId != vid ||
+			req.ResponseId != rid || req.Reason != "мало опыта" {
+			t.Fatalf("RPC reject request = %+v", req)
+		}
+		// The author-side view strips the reject reason: it belongs to the
+		// candidate.
+		if strings.Contains(w.Body.String(), `"reason"`) {
+			t.Fatalf("author view leaked the reject reason: %s", w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), `"status":"rejected"`) {
+			t.Fatalf("reject view wrong: %s", w.Body.String())
+		}
+	})
+
+	t.Run("reject accepts an empty body", func(t *testing.T) {
+		app, _ := testApp()
+		fake := app.vacancies.(*fakeVacancies)
+		fake.response = sampleResponse()
+		w := doJSON(app, http.MethodPost, "/vacancies/"+vid+"/responses/"+rid+"/reject",
+			"", sessionCookie(app, actor))
+		if w.Code != http.StatusOK {
+			t.Fatalf("reject without body: %d %s", w.Code, w.Body.String())
+		}
+		req, _ := fake.lastTransition.Load().(*jobpb.RejectVacancyResponseRequest)
+		if req == nil || req.Reason != "" {
+			t.Fatalf("empty body must map to an empty reason: %+v", req)
+		}
+	})
+
+	t.Run("pipeline calls require a session", func(t *testing.T) {
+		app, _ := testApp()
+		fake := app.vacancies.(*fakeVacancies)
+		for _, path := range []string{
+			"/vacancies/" + vid + "/responses/" + rid + "/reject",
+			"/vacancies/" + vid + "/responses/" + rid + "/offer",
+			"/vacancies/" + vid + "/responses/" + rid + "/offer/withdraw",
+			"/vacancies/" + vid + "/responses/" + rid + "/offer/accept",
+			"/vacancies/" + vid + "/responses/" + rid + "/offer/decline",
+			"/vacancies/" + vid + "/responses/" + rid + "/hired",
+		} {
+			w := doJSON(app, http.MethodPost, path, "", "")
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf("anonymous POST %s: %d", path, w.Code)
+			}
+		}
+		if fake.lastTransition.Load() != nil {
+			t.Fatal("anonymous call reached the RPC")
+		}
+	})
+
+	t.Run("accept and hired pass ids and actor", func(t *testing.T) {
+		app, _ := testApp()
+		fake := app.vacancies.(*fakeVacancies)
+		fake.response = sampleResponse()
+
+		w := doJSON(app, http.MethodPost, "/vacancies/"+vid+"/responses/"+rid+"/offer/accept",
+			"", sessionCookie(app, actor))
+		if w.Code != http.StatusOK {
+			t.Fatalf("accept: %d %s", w.Code, w.Body.String())
+		}
+		req, _ := fake.lastTransition.Load().(*jobpb.AcceptOfferRequest)
+		if req == nil || req.ActorUserId != actor || req.ResponseId != rid {
+			t.Fatalf("RPC accept request = %+v", req)
+		}
+
+		app2, _ := testApp()
+		fake2 := app2.vacancies.(*fakeVacancies)
+		fake2.response = sampleResponse()
+		w = doJSON(app2, http.MethodPost, "/vacancies/"+vid+"/responses/"+rid+"/hired",
+			"", sessionCookie(app2, actor))
+		if w.Code != http.StatusOK {
+			t.Fatalf("hired: %d %s", w.Code, w.Body.String())
+		}
+		hreq, _ := fake2.lastTransition.Load().(*jobpb.MarkHiredRequest)
+		if hreq == nil || hreq.ActorUserId != actor || hreq.VacancyId != vid {
+			t.Fatalf("RPC hired request = %+v", hreq)
+		}
+	})
+
+	t.Run("state conflicts and races map to 409", func(t *testing.T) {
+		app, _ := testApp()
+		fake := app.vacancies.(*fakeVacancies)
+		fake.err = status.Error(codes.FailedPrecondition, "response is rejected; this transition requires active")
+		w := doJSON(app, http.MethodPost, "/vacancies/"+vid+"/responses/"+rid+"/offer",
+			"", sessionCookie(app, actor))
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "requires active") {
+			t.Fatalf("conflict: %d %s", w.Code, w.Body.String())
+		}
+		fake.err = status.Error(codes.AlreadyExists, "another response already holds an outstanding offer")
+		w = doJSON(app, http.MethodPost, "/vacancies/"+vid+"/responses/"+rid+"/offer",
+			"", sessionCookie(app, actor))
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "outstanding offer") {
+			t.Fatalf("offer race: %d %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("decline keeps the reason for the author view", func(t *testing.T) {
+		app, _ := testApp()
+		fake := app.vacancies.(*fakeVacancies)
+		fake.response = sampleResponse()
+		fake.response.Status = "offer_declined"
+		fake.response.Reason = "низкая ставка"
+		w := doJSON(app, http.MethodPost, "/vacancies/"+vid+"/responses/"+rid+"/offer/decline",
+			`{"reason":"низкая ставка"}`, sessionCookie(app, actor))
+		if w.Code != http.StatusOK {
+			t.Fatalf("decline: %d %s", w.Code, w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), `"reason":"низкая ставка"`) {
+			t.Fatalf("decline view lost the reason: %s", w.Body.String())
+		}
+	})
 }

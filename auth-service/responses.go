@@ -80,7 +80,7 @@ func (app *application) listVacancyResponses(c *gin.Context) {
 	}
 	views := make([]*responseView, 0, len(list.Responses))
 	for _, r := range list.Responses {
-		views = append(views, responseJSON(r))
+		views = append(views, responseJSONForAuthor(r))
 	}
 	c.JSON(http.StatusOK, gin.H{"responses": views, "next_page_token": list.NextPageToken})
 }
@@ -101,9 +101,10 @@ func (app *application) withdrawVacancyResponse(c *gin.Context) {
 		app.writeVacancyError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, responseJSON(r))
+	c.JSON(http.StatusOK, responseJSONForCandidate(r))
 }
 
+// getMyVacancyResponse serves the candidate; the response JSON is theirs.
 func (app *application) getMyVacancyResponse(c *gin.Context) {
 	actor, ok := app.actor(c)
 	if !ok {
@@ -119,7 +120,139 @@ func (app *application) getMyVacancyResponse(c *gin.Context) {
 		app.writeVacancyError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, responseJSON(r))
+	c.JSON(http.StatusOK, responseJSONForCandidate(r))
+}
+
+// decisionRequest carries the optional reason of reject/decline calls.
+type decisionRequest struct {
+	Reason *string `json:"reason"`
+}
+
+// bindReason reads the optional JSON body of a decision call; an empty body
+// is valid and means "no reason". Non-empty bodies go through the same
+// hardened parser as every other JSON endpoint (invalid UTF-8 and trailing
+// documents are rejected).
+func bindReason(c *gin.Context) (string, bool) {
+	if c.Request.Body == nil || c.Request.ContentLength == 0 {
+		return "", true
+	}
+	var req decisionRequest
+	if err := bindJSON(c, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return "", false
+	}
+	return textOrEmpty(req.Reason), true
+}
+
+// rejectVacancyResponse: author, active -> rejected; the reason reaches the
+// candidate only (the author list view strips it, see responseJSONForAuthor).
+func (app *application) rejectVacancyResponse(c *gin.Context) {
+	actor, ok := app.actor(c)
+	if !ok {
+		return
+	}
+	reason, ok := bindReason(c)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), requestTimeout)
+	defer cancel()
+	r, err := app.vacancies.RejectVacancyResponse(ctx, &jobpb.RejectVacancyResponseRequest{
+		ActorUserId: actor,
+		VacancyId:   c.Param("id"),
+		ResponseId:  c.Param("rid"),
+		Reason:      reason,
+	})
+	if err != nil {
+		app.writeVacancyError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, responseJSONForAuthor(r))
+}
+
+func (app *application) sendOffer(c *gin.Context) {
+	app.simpleTransition(c, func(ctx context.Context, actor string) (*jobpb.VacancyResponse, error) {
+		return app.vacancies.SendOffer(ctx, &jobpb.SendOfferRequest{
+			ActorUserId: actor, VacancyId: c.Param("id"), ResponseId: c.Param("rid"),
+		})
+	})
+}
+
+func (app *application) withdrawOffer(c *gin.Context) {
+	app.simpleTransition(c, func(ctx context.Context, actor string) (*jobpb.VacancyResponse, error) {
+		return app.vacancies.WithdrawOffer(ctx, &jobpb.WithdrawOfferRequest{
+			ActorUserId: actor, VacancyId: c.Param("id"), ResponseId: c.Param("rid"),
+		})
+	})
+}
+
+func (app *application) markHired(c *gin.Context) {
+	app.simpleTransition(c, func(ctx context.Context, actor string) (*jobpb.VacancyResponse, error) {
+		return app.vacancies.MarkHired(ctx, &jobpb.MarkHiredRequest{
+			ActorUserId: actor, VacancyId: c.Param("id"), ResponseId: c.Param("rid"),
+		})
+	})
+}
+
+func (app *application) acceptOffer(c *gin.Context) {
+	actor, ok := app.actor(c)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), requestTimeout)
+	defer cancel()
+	r, err := app.vacancies.AcceptOffer(ctx, &jobpb.AcceptOfferRequest{
+		ActorUserId: actor,
+		VacancyId:   c.Param("id"),
+		ResponseId:  c.Param("rid"),
+	})
+	if err != nil {
+		app.writeVacancyError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, responseJSONForCandidate(r))
+}
+
+func (app *application) declineOffer(c *gin.Context) {
+	actor, ok := app.actor(c)
+	if !ok {
+		return
+	}
+	reason, ok := bindReason(c)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), requestTimeout)
+	defer cancel()
+	r, err := app.vacancies.DeclineOffer(ctx, &jobpb.DeclineOfferRequest{
+		ActorUserId: actor,
+		VacancyId:   c.Param("id"),
+		ResponseId:  c.Param("rid"),
+		Reason:      reason,
+	})
+	if err != nil {
+		app.writeVacancyError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, responseJSONForCandidate(r))
+}
+
+// simpleTransition serves the author-side hiring calls without a request
+// body (send/withdraw/hired). Author-side calls strip the reject reason that
+// belongs to the candidate — matching the dedicated reject handler.
+func (app *application) simpleTransition(c *gin.Context, call func(context.Context, string) (*jobpb.VacancyResponse, error)) {
+	actor, ok := app.actor(c)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), requestTimeout)
+	defer cancel()
+	r, err := call(ctx, actor)
+	if err != nil {
+		app.writeVacancyError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, responseJSONForAuthor(r))
 }
 
 // responseView is the HTTP representation of a vacancy response. It is
@@ -132,8 +265,10 @@ type responseView struct {
 	CoverLetter     string  `json:"cover_letter"`
 	Contact         *string `json:"contact"`
 	Status          string  `json:"status"`
+	Reason          *string `json:"reason,omitempty"`
 	CreatedAt       string  `json:"created_at"`
 	WithdrawnAt     *string `json:"withdrawn_at"`
+	DecidedAt       *string `json:"decided_at"`
 }
 
 func responseJSON(r *jobpb.VacancyResponse) *responseView {
@@ -145,9 +280,34 @@ func responseJSON(r *jobpb.VacancyResponse) *responseView {
 		Status:          r.Status,
 		CreatedAt:       utcString(r.CreatedAt),
 		WithdrawnAt:     optionalTimestamp(r.WithdrawnAt),
+		DecidedAt:       optionalTimestamp(r.DecidedAt),
 	}
 	if r.Contact != "" {
 		view.Contact = &r.Contact
 	}
+	if r.Reason != "" {
+		view.Reason = &r.Reason
+	}
 	return view
+}
+
+// responseJSONForAuthor strips reasons meant for the candidate: the author
+// sees the decline reason of their offer, never the reject reason they gave
+// (their own) — the author's own reason is already known to them, and the
+// candidate must not learn it back through a shared view. The reject reason
+// is stripped because the author view is also the shape reused by
+// simpleTransition responses.
+func responseJSONForAuthor(r *jobpb.VacancyResponse) *responseView {
+	view := responseJSON(r)
+	if r.Status == "rejected" {
+		view.Reason = nil
+	}
+	return view
+}
+
+// responseJSONForCandidate strips nothing the candidate may not see: the
+// candidate sees the reject reason and their own decline reason; the contact
+// is their own.
+func responseJSONForCandidate(r *jobpb.VacancyResponse) *responseView {
+	return responseJSON(r)
 }

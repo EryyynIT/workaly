@@ -110,6 +110,13 @@ func (app *application) router() *gin.Engine {
 	router.GET("/vacancies/:id/responses", app.listVacancyResponses)
 	router.GET("/vacancies/:id/responses/mine", app.getMyVacancyResponse)
 	router.POST("/vacancies/:id/responses/:rid/withdraw", app.jsonRequest, app.withdrawVacancyResponse)
+	// Hiring pipeline of the response (S3, docs/s3-hiring.md decision 1).
+	router.POST("/vacancies/:id/responses/:rid/reject", app.jsonRequest, app.rejectVacancyResponse)
+	router.POST("/vacancies/:id/responses/:rid/offer", app.jsonRequest, app.sendOffer)
+	router.POST("/vacancies/:id/responses/:rid/offer/withdraw", app.jsonRequest, app.withdrawOffer)
+	router.POST("/vacancies/:id/responses/:rid/offer/accept", app.jsonRequest, app.acceptOffer)
+	router.POST("/vacancies/:id/responses/:rid/offer/decline", app.jsonRequest, app.declineOffer)
+	router.POST("/vacancies/:id/responses/:rid/hired", app.jsonRequest, app.markHired)
 	// Order catalog: the executor side mirrors the vacancy responses, with a
 	// proposed amount and deadline instead of a cover letter contact.
 	router.POST("/orders", app.jsonRequest, app.createOrder)
