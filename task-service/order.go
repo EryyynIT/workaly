@@ -240,8 +240,54 @@ func (s *taskService) CloseOrder(ctx context.Context, req *taskpb.CloseOrderRequ
 	if !validUUID(req.OrderId) {
 		return nil, invalid("order_id must be a UUID")
 	}
-	return s.transition(ctx, req.OrderId, req.ActorUserId, "published", "closed",
-		"order is already closed", "draft must be published before it can be closed")
+
+	// Closing is allowed only before selection. Lock the order before checking
+	// for a deal: SelectProposal takes the same lock, so close and selection
+	// cannot race past one another. In particular, terms_pending must remain
+	// available for the executor's confirm/decline response.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, mapDBError(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var author, current string
+	err = tx.QueryRowContext(ctx, `SELECT author_user_id, status FROM orders WHERE id = $1 FOR UPDATE`, req.OrderId).
+		Scan(&author, &current)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, notFound()
+	}
+	if err != nil {
+		return nil, mapDBError(err)
+	}
+	if author != req.ActorUserId {
+		return nil, notFound()
+	}
+	if current == "closed" {
+		return nil, precondition("order is already closed")
+	}
+	if current != "draft" && current != "published" {
+		return nil, precondition("only a draft or published order without a selected executor can be closed")
+	}
+	var hasDeal bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM deals WHERE order_id = $1)`, req.OrderId).Scan(&hasDeal); err != nil {
+		return nil, mapDBError(err)
+	}
+	if hasDeal {
+		return nil, precondition("order has a selected executor; confirm, decline, or cancel the deal")
+	}
+	order, err := scanOrder(tx.QueryRowContext(ctx, `UPDATE orders SET status = 'closed', closed_at = CURRENT_TIMESTAMP
+		WHERE id = $1 AND author_user_id = $2 AND status = $3
+		RETURNING `+orderColumns, req.OrderId, req.ActorUserId, current))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, precondition("order changed concurrently; reload and retry")
+	}
+	if err != nil {
+		return nil, mapDBError(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, mapDBError(err)
+	}
+	return order, nil
 }
 
 func (s *taskService) ListMyOrders(ctx context.Context, req *taskpb.ListMyOrdersRequest) (*taskpb.ListMyOrdersResponse, error) {

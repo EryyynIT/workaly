@@ -13,7 +13,11 @@ import "google/protobuf/timestamp.proto";
 // anything not owned by the actor is reported as not found so existence is
 // never disclosed.
 //
-// State machine: draft -> published -> closed. Closed is terminal in S2.
+// State machine: draft -> published -> closed, and after the executor
+// selection published -> in_progress -> submitted -> completed, or
+// in_progress/revision_requested -> cancelled (S3, docs/s3-hiring.md).
+// Closing is possible only before the selection; a started order is
+// finished by the deal (completed) or cancelled, never closed.
 // `version` starts at 1 and is bumped by every successful mutation of the
 // order itself; update calls must carry the version the caller saw, a
 // mismatch is reported as FailedPrecondition so the edge maps it to 409.
@@ -55,6 +59,148 @@ service TaskService {
   // (published_at, id). Anonymous callers get the same view as logged-in
   // users; there is no actor in the request.
   rpc ListPublishedOrders(ListPublishedOrdersRequest) returns (ListPublishedOrdersResponse);
+  // Deal pipeline of the order (S3.2, decisions 2-3 of docs/s3-hiring.md).
+  // SelectProposal: the order author picks an active proposal and fixes the
+  // confirmed terms v1. Terms equal to the proposal start the deal at once
+  // (in_progress); diverging terms wait for the executor (terms_pending).
+  // The selection is transactional with the order: the order becomes
+  // in_progress and its other active proposals are auto-withdrawn with the
+  // system reason "executor_selected". A concurrent second selection is
+  // reported as AlreadyExists (409).
+  rpc SelectProposal(SelectProposalRequest) returns (Deal);
+  // ConfirmDealTerms / DeclineDealTerms: the executor answers terms_pending.
+  // Declining cancels the selection atomically: the deal and its terms are
+  // deleted, the order returns to published, the chosen proposal returns to
+  // active, auto-withdrawn proposals of the same selection are restored.
+  rpc ConfirmDealTerms(ConfirmDealTermsRequest) returns (Deal);
+  rpc DeclineDealTerms(DeclineDealTermsRequest) returns (Deal);
+  // SubmitResult: the executor delivers. in_progress -> submitted on the
+  // first delivery, revision_requested -> submitted on every next one; each
+  // delivery appends an immutable submission row and bumps the deal version.
+  rpc SubmitResult(SubmitResultRequest) returns (Deal);
+  // AcceptResult: the author accepts the last submission (submitted ->
+  // completed, terminal; the order is completed in the same transaction).
+  rpc AcceptResult(AcceptResultRequest) returns (Deal);
+  // RequestRevision: the author sends the last submission back
+  // (submitted -> revision_requested). Requires a reason; bounded by
+  // terms.revisions_included, an exhausted budget is FailedPrecondition.
+  rpc RequestRevision(RequestRevisionRequest) returns (Deal);
+  // CancelDeal: the author cancels before the first submission
+  // (in_progress/revision_requested -> cancelled, terminal; the order is
+  // cancelled in the same transaction). The reason is mandatory.
+  rpc CancelDeal(CancelDealRequest) returns (Deal);
+  // GetDeal: the deal of an order, visible to both parties only; a stranger
+  // gets the same 404 as a missing deal.
+  rpc GetDeal(GetDealRequest) returns (Deal);
+  // Every transition is a CAS on the expected deal status with the acting
+  // side verified against the deal row: a lost race or a repeated command is
+  // FailedPrecondition so the edge maps it to 409.
+}
+
+// Deal is the work agreement of an order (S3.2). Exactly one deal may exist
+// per order; a declined handshake deletes the deal and restores the order,
+// so the order never keeps a dead deal.
+message Deal {
+  string id = 1;
+  string order_id = 2;
+  string customer_user_id = 3;
+  string executor_user_id = 4;
+  // terms_pending | in_progress | submitted | revision_requested |
+  // completed | cancelled
+  string status = 5;
+  // Immutable terms v1 fixed at selection (amount, currency, deadline,
+  // revisions included, acceptance criteria). Terms versioning (v2+) is a
+  // separate increment after the core pipeline (docs/s3-hiring.md, decision
+  // 2).
+  DealTerms terms = 6;
+  // Deliveries, oldest first; each carries the result text, its timestamp
+  // and the author's revision reason when the delivery was sent back.
+  repeated DealSubmission submissions = 7;
+  int64 version = 8;  // bumped by every successful transition
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp started_at = 10;    // set when work began (in_progress)
+  google.protobuf.Timestamp submitted_at = 11;  // last delivery time
+  google.protobuf.Timestamp decided_at = 12;    // completed_at / cancelled_at
+  // The cancel reason; visible to both parties (docs/s3-hiring.md, decision
+  // 3). Revision reasons live on the submissions they sent back.
+  string reason = 13;
+}
+
+message DealTerms {
+  string amount = 1;   // decimal string, always > 0
+  string currency = 2; // ISO 4217 alpha-3
+  string deadline = 3; // ISO date, "" when not set
+  int32 revisions_included = 4;
+  string acceptance_criteria = 5;  // "" when not set
+}
+
+message DealSubmission {
+  int64 iteration = 1;  // 1-based, in delivery order
+  string result = 2;
+  google.protobuf.Timestamp submitted_at = 3;
+  // The author's revision reason that sent this delivery back; "" when the
+  // delivery was never sent back. Cancellation before the first delivery
+  // leaves no submissions at all.
+  string revision_reason = 4;
+}
+
+message SelectProposalRequest {
+  string actor_user_id = 1;
+  string order_id = 2;
+  string proposal_id = 3;
+  // Confirmed terms v1; the edge sends the proposal's terms verbatim when
+  // the customer keeps them. The amount/currency/deadline triple and the
+  // proposal's one are compared in PostgreSQL, so the handshake starts
+  // exactly when the confirmed terms diverge.
+  string amount = 4;
+  string currency = 5;
+  string deadline = 6;
+  int32 revisions_included = 7;
+  string acceptance_criteria = 8;
+}
+
+message ConfirmDealTermsRequest {
+  string actor_user_id = 1;
+  string order_id = 2;
+}
+
+message DeclineDealTermsRequest {
+  string actor_user_id = 1;
+  string order_id = 2;
+  // Optional, shown to the customer; empty means no reason given.
+  string reason = 3;
+}
+
+message SubmitResultRequest {
+  string actor_user_id = 1;
+  string order_id = 2;
+  string result = 3;
+  // Client-generated stable key; retries must reuse it.
+  string idempotency_key = 4;
+}
+
+message AcceptResultRequest {
+  string actor_user_id = 1;
+  string order_id = 2;
+}
+
+message RequestRevisionRequest {
+  string actor_user_id = 1;
+  string order_id = 2;
+  // Mandatory, stored on the submission it sends back.
+  string reason = 3;
+}
+
+message CancelDealRequest {
+  string actor_user_id = 1;
+  string order_id = 2;
+  // Mandatory, visible to both parties.
+  string reason = 3;
+}
+
+message GetDealRequest {
+  string actor_user_id = 1;
+  string order_id = 2;
 }
 
 message Order {
@@ -166,6 +312,9 @@ message OrderProposal {
   string status = 8;              // active | withdrawn
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp withdrawn_at = 10;  // unset while active
+  // System reason of an automatic withdrawal: "executor_selected" when the
+  // customer picked another proposal, "" for the executor's own withdrawal.
+  string withdrawn_reason = 11;
 }
 
 message CreateOrderProposalRequest {

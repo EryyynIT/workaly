@@ -22,6 +22,818 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Deal is the work agreement of an order (S3.2). Exactly one deal may exist
+// per order; a declined handshake deletes the deal and restores the order,
+// so the order never keeps a dead deal.
+type Deal struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	OrderId        string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	CustomerUserId string                 `protobuf:"bytes,3,opt,name=customer_user_id,json=customerUserId,proto3" json:"customer_user_id,omitempty"`
+	ExecutorUserId string                 `protobuf:"bytes,4,opt,name=executor_user_id,json=executorUserId,proto3" json:"executor_user_id,omitempty"`
+	// terms_pending | in_progress | submitted | revision_requested |
+	// completed | cancelled
+	Status string `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	// Immutable terms v1 fixed at selection (amount, currency, deadline,
+	// revisions included, acceptance criteria). Terms versioning (v2+) is a
+	// separate increment after the core pipeline (docs/s3-hiring.md, decision
+	// 2).
+	Terms *DealTerms `protobuf:"bytes,6,opt,name=terms,proto3" json:"terms,omitempty"`
+	// Deliveries, oldest first; each carries the result text, its timestamp
+	// and the author's revision reason when the delivery was sent back.
+	Submissions []*DealSubmission      `protobuf:"bytes,7,rep,name=submissions,proto3" json:"submissions,omitempty"`
+	Version     int64                  `protobuf:"varint,8,opt,name=version,proto3" json:"version,omitempty"` // bumped by every successful transition
+	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	StartedAt   *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`       // set when work began (in_progress)
+	SubmittedAt *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=submitted_at,json=submittedAt,proto3" json:"submitted_at,omitempty"` // last delivery time
+	DecidedAt   *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=decided_at,json=decidedAt,proto3" json:"decided_at,omitempty"`       // completed_at / cancelled_at
+	// The cancel reason; visible to both parties (docs/s3-hiring.md, decision
+	// 3). Revision reasons live on the submissions they sent back.
+	Reason        string `protobuf:"bytes,13,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Deal) Reset() {
+	*x = Deal{}
+	mi := &file_task_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Deal) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Deal) ProtoMessage() {}
+
+func (x *Deal) ProtoReflect() protoreflect.Message {
+	mi := &file_task_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Deal.ProtoReflect.Descriptor instead.
+func (*Deal) Descriptor() ([]byte, []int) {
+	return file_task_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *Deal) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Deal) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *Deal) GetCustomerUserId() string {
+	if x != nil {
+		return x.CustomerUserId
+	}
+	return ""
+}
+
+func (x *Deal) GetExecutorUserId() string {
+	if x != nil {
+		return x.ExecutorUserId
+	}
+	return ""
+}
+
+func (x *Deal) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *Deal) GetTerms() *DealTerms {
+	if x != nil {
+		return x.Terms
+	}
+	return nil
+}
+
+func (x *Deal) GetSubmissions() []*DealSubmission {
+	if x != nil {
+		return x.Submissions
+	}
+	return nil
+}
+
+func (x *Deal) GetVersion() int64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *Deal) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *Deal) GetStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartedAt
+	}
+	return nil
+}
+
+func (x *Deal) GetSubmittedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.SubmittedAt
+	}
+	return nil
+}
+
+func (x *Deal) GetDecidedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DecidedAt
+	}
+	return nil
+}
+
+func (x *Deal) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type DealTerms struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Amount             string                 `protobuf:"bytes,1,opt,name=amount,proto3" json:"amount,omitempty"`     // decimal string, always > 0
+	Currency           string                 `protobuf:"bytes,2,opt,name=currency,proto3" json:"currency,omitempty"` // ISO 4217 alpha-3
+	Deadline           string                 `protobuf:"bytes,3,opt,name=deadline,proto3" json:"deadline,omitempty"` // ISO date, "" when not set
+	RevisionsIncluded  int32                  `protobuf:"varint,4,opt,name=revisions_included,json=revisionsIncluded,proto3" json:"revisions_included,omitempty"`
+	AcceptanceCriteria string                 `protobuf:"bytes,5,opt,name=acceptance_criteria,json=acceptanceCriteria,proto3" json:"acceptance_criteria,omitempty"` // "" when not set
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *DealTerms) Reset() {
+	*x = DealTerms{}
+	mi := &file_task_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DealTerms) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DealTerms) ProtoMessage() {}
+
+func (x *DealTerms) ProtoReflect() protoreflect.Message {
+	mi := &file_task_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DealTerms.ProtoReflect.Descriptor instead.
+func (*DealTerms) Descriptor() ([]byte, []int) {
+	return file_task_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *DealTerms) GetAmount() string {
+	if x != nil {
+		return x.Amount
+	}
+	return ""
+}
+
+func (x *DealTerms) GetCurrency() string {
+	if x != nil {
+		return x.Currency
+	}
+	return ""
+}
+
+func (x *DealTerms) GetDeadline() string {
+	if x != nil {
+		return x.Deadline
+	}
+	return ""
+}
+
+func (x *DealTerms) GetRevisionsIncluded() int32 {
+	if x != nil {
+		return x.RevisionsIncluded
+	}
+	return 0
+}
+
+func (x *DealTerms) GetAcceptanceCriteria() string {
+	if x != nil {
+		return x.AcceptanceCriteria
+	}
+	return ""
+}
+
+type DealSubmission struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Iteration   int64                  `protobuf:"varint,1,opt,name=iteration,proto3" json:"iteration,omitempty"` // 1-based, in delivery order
+	Result      string                 `protobuf:"bytes,2,opt,name=result,proto3" json:"result,omitempty"`
+	SubmittedAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=submitted_at,json=submittedAt,proto3" json:"submitted_at,omitempty"`
+	// The author's revision reason that sent this delivery back; "" when the
+	// delivery was never sent back. Cancellation before the first delivery
+	// leaves no submissions at all.
+	RevisionReason string `protobuf:"bytes,4,opt,name=revision_reason,json=revisionReason,proto3" json:"revision_reason,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DealSubmission) Reset() {
+	*x = DealSubmission{}
+	mi := &file_task_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DealSubmission) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DealSubmission) ProtoMessage() {}
+
+func (x *DealSubmission) ProtoReflect() protoreflect.Message {
+	mi := &file_task_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DealSubmission.ProtoReflect.Descriptor instead.
+func (*DealSubmission) Descriptor() ([]byte, []int) {
+	return file_task_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *DealSubmission) GetIteration() int64 {
+	if x != nil {
+		return x.Iteration
+	}
+	return 0
+}
+
+func (x *DealSubmission) GetResult() string {
+	if x != nil {
+		return x.Result
+	}
+	return ""
+}
+
+func (x *DealSubmission) GetSubmittedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.SubmittedAt
+	}
+	return nil
+}
+
+func (x *DealSubmission) GetRevisionReason() string {
+	if x != nil {
+		return x.RevisionReason
+	}
+	return ""
+}
+
+type SelectProposalRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ActorUserId string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	OrderId     string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	ProposalId  string                 `protobuf:"bytes,3,opt,name=proposal_id,json=proposalId,proto3" json:"proposal_id,omitempty"`
+	// Confirmed terms v1; the edge sends the proposal's terms verbatim when
+	// the customer keeps them. The amount/currency/deadline triple and the
+	// proposal's one are compared in PostgreSQL, so the handshake starts
+	// exactly when the confirmed terms diverge.
+	Amount             string `protobuf:"bytes,4,opt,name=amount,proto3" json:"amount,omitempty"`
+	Currency           string `protobuf:"bytes,5,opt,name=currency,proto3" json:"currency,omitempty"`
+	Deadline           string `protobuf:"bytes,6,opt,name=deadline,proto3" json:"deadline,omitempty"`
+	RevisionsIncluded  int32  `protobuf:"varint,7,opt,name=revisions_included,json=revisionsIncluded,proto3" json:"revisions_included,omitempty"`
+	AcceptanceCriteria string `protobuf:"bytes,8,opt,name=acceptance_criteria,json=acceptanceCriteria,proto3" json:"acceptance_criteria,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *SelectProposalRequest) Reset() {
+	*x = SelectProposalRequest{}
+	mi := &file_task_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SelectProposalRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SelectProposalRequest) ProtoMessage() {}
+
+func (x *SelectProposalRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_task_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SelectProposalRequest.ProtoReflect.Descriptor instead.
+func (*SelectProposalRequest) Descriptor() ([]byte, []int) {
+	return file_task_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *SelectProposalRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *SelectProposalRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *SelectProposalRequest) GetProposalId() string {
+	if x != nil {
+		return x.ProposalId
+	}
+	return ""
+}
+
+func (x *SelectProposalRequest) GetAmount() string {
+	if x != nil {
+		return x.Amount
+	}
+	return ""
+}
+
+func (x *SelectProposalRequest) GetCurrency() string {
+	if x != nil {
+		return x.Currency
+	}
+	return ""
+}
+
+func (x *SelectProposalRequest) GetDeadline() string {
+	if x != nil {
+		return x.Deadline
+	}
+	return ""
+}
+
+func (x *SelectProposalRequest) GetRevisionsIncluded() int32 {
+	if x != nil {
+		return x.RevisionsIncluded
+	}
+	return 0
+}
+
+func (x *SelectProposalRequest) GetAcceptanceCriteria() string {
+	if x != nil {
+		return x.AcceptanceCriteria
+	}
+	return ""
+}
+
+type ConfirmDealTermsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorUserId   string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	OrderId       string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfirmDealTermsRequest) Reset() {
+	*x = ConfirmDealTermsRequest{}
+	mi := &file_task_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfirmDealTermsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfirmDealTermsRequest) ProtoMessage() {}
+
+func (x *ConfirmDealTermsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_task_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfirmDealTermsRequest.ProtoReflect.Descriptor instead.
+func (*ConfirmDealTermsRequest) Descriptor() ([]byte, []int) {
+	return file_task_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ConfirmDealTermsRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *ConfirmDealTermsRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+type DeclineDealTermsRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ActorUserId string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	OrderId     string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	// Optional, shown to the customer; empty means no reason given.
+	Reason        string `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeclineDealTermsRequest) Reset() {
+	*x = DeclineDealTermsRequest{}
+	mi := &file_task_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeclineDealTermsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeclineDealTermsRequest) ProtoMessage() {}
+
+func (x *DeclineDealTermsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_task_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeclineDealTermsRequest.ProtoReflect.Descriptor instead.
+func (*DeclineDealTermsRequest) Descriptor() ([]byte, []int) {
+	return file_task_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *DeclineDealTermsRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *DeclineDealTermsRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *DeclineDealTermsRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type SubmitResultRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ActorUserId string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	OrderId     string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	Result      string                 `protobuf:"bytes,3,opt,name=result,proto3" json:"result,omitempty"`
+	// Client-generated stable key; retries must reuse it.
+	IdempotencyKey string `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SubmitResultRequest) Reset() {
+	*x = SubmitResultRequest{}
+	mi := &file_task_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitResultRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitResultRequest) ProtoMessage() {}
+
+func (x *SubmitResultRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_task_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitResultRequest.ProtoReflect.Descriptor instead.
+func (*SubmitResultRequest) Descriptor() ([]byte, []int) {
+	return file_task_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *SubmitResultRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *SubmitResultRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *SubmitResultRequest) GetResult() string {
+	if x != nil {
+		return x.Result
+	}
+	return ""
+}
+
+func (x *SubmitResultRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type AcceptResultRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorUserId   string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	OrderId       string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AcceptResultRequest) Reset() {
+	*x = AcceptResultRequest{}
+	mi := &file_task_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AcceptResultRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AcceptResultRequest) ProtoMessage() {}
+
+func (x *AcceptResultRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_task_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AcceptResultRequest.ProtoReflect.Descriptor instead.
+func (*AcceptResultRequest) Descriptor() ([]byte, []int) {
+	return file_task_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *AcceptResultRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *AcceptResultRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+type RequestRevisionRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ActorUserId string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	OrderId     string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	// Mandatory, stored on the submission it sends back.
+	Reason        string `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestRevisionRequest) Reset() {
+	*x = RequestRevisionRequest{}
+	mi := &file_task_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestRevisionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestRevisionRequest) ProtoMessage() {}
+
+func (x *RequestRevisionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_task_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestRevisionRequest.ProtoReflect.Descriptor instead.
+func (*RequestRevisionRequest) Descriptor() ([]byte, []int) {
+	return file_task_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *RequestRevisionRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *RequestRevisionRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *RequestRevisionRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type CancelDealRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ActorUserId string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	OrderId     string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	// Mandatory, visible to both parties.
+	Reason        string `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelDealRequest) Reset() {
+	*x = CancelDealRequest{}
+	mi := &file_task_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelDealRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelDealRequest) ProtoMessage() {}
+
+func (x *CancelDealRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_task_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelDealRequest.ProtoReflect.Descriptor instead.
+func (*CancelDealRequest) Descriptor() ([]byte, []int) {
+	return file_task_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *CancelDealRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *CancelDealRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *CancelDealRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type GetDealRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorUserId   string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	OrderId       string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetDealRequest) Reset() {
+	*x = GetDealRequest{}
+	mi := &file_task_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetDealRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetDealRequest) ProtoMessage() {}
+
+func (x *GetDealRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_task_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetDealRequest.ProtoReflect.Descriptor instead.
+func (*GetDealRequest) Descriptor() ([]byte, []int) {
+	return file_task_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *GetDealRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *GetDealRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
 type Order struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -44,7 +856,7 @@ type Order struct {
 
 func (x *Order) Reset() {
 	*x = Order{}
-	mi := &file_task_proto_msgTypes[0]
+	mi := &file_task_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -56,7 +868,7 @@ func (x *Order) String() string {
 func (*Order) ProtoMessage() {}
 
 func (x *Order) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[0]
+	mi := &file_task_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -69,7 +881,7 @@ func (x *Order) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Order.ProtoReflect.Descriptor instead.
 func (*Order) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{0}
+	return file_task_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Order) GetId() string {
@@ -185,7 +997,7 @@ type CreateOrderRequest struct {
 
 func (x *CreateOrderRequest) Reset() {
 	*x = CreateOrderRequest{}
-	mi := &file_task_proto_msgTypes[1]
+	mi := &file_task_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -197,7 +1009,7 @@ func (x *CreateOrderRequest) String() string {
 func (*CreateOrderRequest) ProtoMessage() {}
 
 func (x *CreateOrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[1]
+	mi := &file_task_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -210,7 +1022,7 @@ func (x *CreateOrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateOrderRequest.ProtoReflect.Descriptor instead.
 func (*CreateOrderRequest) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{1}
+	return file_task_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CreateOrderRequest) GetActorUserId() string {
@@ -273,7 +1085,7 @@ type GetOrderRequest struct {
 
 func (x *GetOrderRequest) Reset() {
 	*x = GetOrderRequest{}
-	mi := &file_task_proto_msgTypes[2]
+	mi := &file_task_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -285,7 +1097,7 @@ func (x *GetOrderRequest) String() string {
 func (*GetOrderRequest) ProtoMessage() {}
 
 func (x *GetOrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[2]
+	mi := &file_task_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -298,7 +1110,7 @@ func (x *GetOrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOrderRequest.ProtoReflect.Descriptor instead.
 func (*GetOrderRequest) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{2}
+	return file_task_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetOrderRequest) GetActorUserId() string {
@@ -333,7 +1145,7 @@ type UpdateOrderRequest struct {
 
 func (x *UpdateOrderRequest) Reset() {
 	*x = UpdateOrderRequest{}
-	mi := &file_task_proto_msgTypes[3]
+	mi := &file_task_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -345,7 +1157,7 @@ func (x *UpdateOrderRequest) String() string {
 func (*UpdateOrderRequest) ProtoMessage() {}
 
 func (x *UpdateOrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[3]
+	mi := &file_task_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -358,7 +1170,7 @@ func (x *UpdateOrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateOrderRequest.ProtoReflect.Descriptor instead.
 func (*UpdateOrderRequest) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{3}
+	return file_task_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UpdateOrderRequest) GetActorUserId() string {
@@ -434,7 +1246,7 @@ type PublishOrderRequest struct {
 
 func (x *PublishOrderRequest) Reset() {
 	*x = PublishOrderRequest{}
-	mi := &file_task_proto_msgTypes[4]
+	mi := &file_task_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -446,7 +1258,7 @@ func (x *PublishOrderRequest) String() string {
 func (*PublishOrderRequest) ProtoMessage() {}
 
 func (x *PublishOrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[4]
+	mi := &file_task_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -459,7 +1271,7 @@ func (x *PublishOrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishOrderRequest.ProtoReflect.Descriptor instead.
 func (*PublishOrderRequest) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{4}
+	return file_task_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *PublishOrderRequest) GetActorUserId() string {
@@ -486,7 +1298,7 @@ type CloseOrderRequest struct {
 
 func (x *CloseOrderRequest) Reset() {
 	*x = CloseOrderRequest{}
-	mi := &file_task_proto_msgTypes[5]
+	mi := &file_task_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -498,7 +1310,7 @@ func (x *CloseOrderRequest) String() string {
 func (*CloseOrderRequest) ProtoMessage() {}
 
 func (x *CloseOrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[5]
+	mi := &file_task_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -511,7 +1323,7 @@ func (x *CloseOrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseOrderRequest.ProtoReflect.Descriptor instead.
 func (*CloseOrderRequest) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{5}
+	return file_task_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *CloseOrderRequest) GetActorUserId() string {
@@ -541,7 +1353,7 @@ type ListMyOrdersRequest struct {
 
 func (x *ListMyOrdersRequest) Reset() {
 	*x = ListMyOrdersRequest{}
-	mi := &file_task_proto_msgTypes[6]
+	mi := &file_task_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -553,7 +1365,7 @@ func (x *ListMyOrdersRequest) String() string {
 func (*ListMyOrdersRequest) ProtoMessage() {}
 
 func (x *ListMyOrdersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[6]
+	mi := &file_task_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -566,7 +1378,7 @@ func (x *ListMyOrdersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMyOrdersRequest.ProtoReflect.Descriptor instead.
 func (*ListMyOrdersRequest) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{6}
+	return file_task_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListMyOrdersRequest) GetActorUserId() string {
@@ -601,7 +1413,7 @@ type ListMyOrdersResponse struct {
 
 func (x *ListMyOrdersResponse) Reset() {
 	*x = ListMyOrdersResponse{}
-	mi := &file_task_proto_msgTypes[7]
+	mi := &file_task_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -613,7 +1425,7 @@ func (x *ListMyOrdersResponse) String() string {
 func (*ListMyOrdersResponse) ProtoMessage() {}
 
 func (x *ListMyOrdersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[7]
+	mi := &file_task_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -626,7 +1438,7 @@ func (x *ListMyOrdersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMyOrdersResponse.ProtoReflect.Descriptor instead.
 func (*ListMyOrdersResponse) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{7}
+	return file_task_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListMyOrdersResponse) GetOrders() []*Order {
@@ -662,7 +1474,7 @@ type ListPublishedOrdersRequest struct {
 
 func (x *ListPublishedOrdersRequest) Reset() {
 	*x = ListPublishedOrdersRequest{}
-	mi := &file_task_proto_msgTypes[8]
+	mi := &file_task_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -674,7 +1486,7 @@ func (x *ListPublishedOrdersRequest) String() string {
 func (*ListPublishedOrdersRequest) ProtoMessage() {}
 
 func (x *ListPublishedOrdersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[8]
+	mi := &file_task_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -687,7 +1499,7 @@ func (x *ListPublishedOrdersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPublishedOrdersRequest.ProtoReflect.Descriptor instead.
 func (*ListPublishedOrdersRequest) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{8}
+	return file_task_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ListPublishedOrdersRequest) GetPageToken() string {
@@ -743,7 +1555,7 @@ type ListPublishedOrdersResponse struct {
 
 func (x *ListPublishedOrdersResponse) Reset() {
 	*x = ListPublishedOrdersResponse{}
-	mi := &file_task_proto_msgTypes[9]
+	mi := &file_task_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -755,7 +1567,7 @@ func (x *ListPublishedOrdersResponse) String() string {
 func (*ListPublishedOrdersResponse) ProtoMessage() {}
 
 func (x *ListPublishedOrdersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[9]
+	mi := &file_task_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -768,7 +1580,7 @@ func (x *ListPublishedOrdersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPublishedOrdersResponse.ProtoReflect.Descriptor instead.
 func (*ListPublishedOrdersResponse) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{9}
+	return file_task_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ListPublishedOrdersResponse) GetOrders() []*Order {
@@ -795,7 +1607,7 @@ type DeleteDraftRequest struct {
 
 func (x *DeleteDraftRequest) Reset() {
 	*x = DeleteDraftRequest{}
-	mi := &file_task_proto_msgTypes[10]
+	mi := &file_task_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -807,7 +1619,7 @@ func (x *DeleteDraftRequest) String() string {
 func (*DeleteDraftRequest) ProtoMessage() {}
 
 func (x *DeleteDraftRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[10]
+	mi := &file_task_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -820,7 +1632,7 @@ func (x *DeleteDraftRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteDraftRequest.ProtoReflect.Descriptor instead.
 func (*DeleteDraftRequest) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{10}
+	return file_task_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *DeleteDraftRequest) GetActorUserId() string {
@@ -852,13 +1664,16 @@ type OrderProposal struct {
 	Status           string                 `protobuf:"bytes,8,opt,name=status,proto3" json:"status,omitempty"`                                             // active | withdrawn
 	CreatedAt        *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	WithdrawnAt      *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=withdrawn_at,json=withdrawnAt,proto3" json:"withdrawn_at,omitempty"` // unset while active
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// System reason of an automatic withdrawal: "executor_selected" when the
+	// customer picked another proposal, "" for the executor's own withdrawal.
+	WithdrawnReason string `protobuf:"bytes,11,opt,name=withdrawn_reason,json=withdrawnReason,proto3" json:"withdrawn_reason,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *OrderProposal) Reset() {
 	*x = OrderProposal{}
-	mi := &file_task_proto_msgTypes[11]
+	mi := &file_task_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -870,7 +1685,7 @@ func (x *OrderProposal) String() string {
 func (*OrderProposal) ProtoMessage() {}
 
 func (x *OrderProposal) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[11]
+	mi := &file_task_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -883,7 +1698,7 @@ func (x *OrderProposal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OrderProposal.ProtoReflect.Descriptor instead.
 func (*OrderProposal) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{11}
+	return file_task_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *OrderProposal) GetId() string {
@@ -956,6 +1771,13 @@ func (x *OrderProposal) GetWithdrawnAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *OrderProposal) GetWithdrawnReason() string {
+	if x != nil {
+		return x.WithdrawnReason
+	}
+	return ""
+}
+
 type CreateOrderProposalRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	ActorUserId      string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
@@ -970,7 +1792,7 @@ type CreateOrderProposalRequest struct {
 
 func (x *CreateOrderProposalRequest) Reset() {
 	*x = CreateOrderProposalRequest{}
-	mi := &file_task_proto_msgTypes[12]
+	mi := &file_task_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -982,7 +1804,7 @@ func (x *CreateOrderProposalRequest) String() string {
 func (*CreateOrderProposalRequest) ProtoMessage() {}
 
 func (x *CreateOrderProposalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[12]
+	mi := &file_task_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -995,7 +1817,7 @@ func (x *CreateOrderProposalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateOrderProposalRequest.ProtoReflect.Descriptor instead.
 func (*CreateOrderProposalRequest) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{12}
+	return file_task_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *CreateOrderProposalRequest) GetActorUserId() string {
@@ -1053,7 +1875,7 @@ type ListOrderProposalsRequest struct {
 
 func (x *ListOrderProposalsRequest) Reset() {
 	*x = ListOrderProposalsRequest{}
-	mi := &file_task_proto_msgTypes[13]
+	mi := &file_task_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1065,7 +1887,7 @@ func (x *ListOrderProposalsRequest) String() string {
 func (*ListOrderProposalsRequest) ProtoMessage() {}
 
 func (x *ListOrderProposalsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[13]
+	mi := &file_task_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1078,7 +1900,7 @@ func (x *ListOrderProposalsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOrderProposalsRequest.ProtoReflect.Descriptor instead.
 func (*ListOrderProposalsRequest) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{13}
+	return file_task_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ListOrderProposalsRequest) GetActorUserId() string {
@@ -1119,7 +1941,7 @@ type ListOrderProposalsResponse struct {
 
 func (x *ListOrderProposalsResponse) Reset() {
 	*x = ListOrderProposalsResponse{}
-	mi := &file_task_proto_msgTypes[14]
+	mi := &file_task_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1131,7 +1953,7 @@ func (x *ListOrderProposalsResponse) String() string {
 func (*ListOrderProposalsResponse) ProtoMessage() {}
 
 func (x *ListOrderProposalsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[14]
+	mi := &file_task_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1144,7 +1966,7 @@ func (x *ListOrderProposalsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOrderProposalsResponse.ProtoReflect.Descriptor instead.
 func (*ListOrderProposalsResponse) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{14}
+	return file_task_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ListOrderProposalsResponse) GetProposals() []*OrderProposal {
@@ -1172,7 +1994,7 @@ type WithdrawOrderProposalRequest struct {
 
 func (x *WithdrawOrderProposalRequest) Reset() {
 	*x = WithdrawOrderProposalRequest{}
-	mi := &file_task_proto_msgTypes[15]
+	mi := &file_task_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1184,7 +2006,7 @@ func (x *WithdrawOrderProposalRequest) String() string {
 func (*WithdrawOrderProposalRequest) ProtoMessage() {}
 
 func (x *WithdrawOrderProposalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[15]
+	mi := &file_task_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1197,7 +2019,7 @@ func (x *WithdrawOrderProposalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WithdrawOrderProposalRequest.ProtoReflect.Descriptor instead.
 func (*WithdrawOrderProposalRequest) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{15}
+	return file_task_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *WithdrawOrderProposalRequest) GetActorUserId() string {
@@ -1231,7 +2053,7 @@ type GetMyOrderProposalRequest struct {
 
 func (x *GetMyOrderProposalRequest) Reset() {
 	*x = GetMyOrderProposalRequest{}
-	mi := &file_task_proto_msgTypes[16]
+	mi := &file_task_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1243,7 +2065,7 @@ func (x *GetMyOrderProposalRequest) String() string {
 func (*GetMyOrderProposalRequest) ProtoMessage() {}
 
 func (x *GetMyOrderProposalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_proto_msgTypes[16]
+	mi := &file_task_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1256,7 +2078,7 @@ func (x *GetMyOrderProposalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMyOrderProposalRequest.ProtoReflect.Descriptor instead.
 func (*GetMyOrderProposalRequest) Descriptor() ([]byte, []int) {
-	return file_task_proto_rawDescGZIP(), []int{16}
+	return file_task_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *GetMyOrderProposalRequest) GetActorUserId() string {
@@ -1278,7 +2100,72 @@ var File_task_proto protoreflect.FileDescriptor
 const file_task_proto_rawDesc = "" +
 	"\n" +
 	"\n" +
-	"task.proto\x12\x04task\x1a\x1fgoogle/protobuf/timestamp.proto\"\x93\x04\n" +
+	"task.proto\x12\x04task\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9e\x04\n" +
+	"\x04Deal\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
+	"\border_id\x18\x02 \x01(\tR\aorderId\x12(\n" +
+	"\x10customer_user_id\x18\x03 \x01(\tR\x0ecustomerUserId\x12(\n" +
+	"\x10executor_user_id\x18\x04 \x01(\tR\x0eexecutorUserId\x12\x16\n" +
+	"\x06status\x18\x05 \x01(\tR\x06status\x12%\n" +
+	"\x05terms\x18\x06 \x01(\v2\x0f.task.DealTermsR\x05terms\x126\n" +
+	"\vsubmissions\x18\a \x03(\v2\x14.task.DealSubmissionR\vsubmissions\x12\x18\n" +
+	"\aversion\x18\b \x01(\x03R\aversion\x129\n" +
+	"\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"started_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12=\n" +
+	"\fsubmitted_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\vsubmittedAt\x129\n" +
+	"\n" +
+	"decided_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tdecidedAt\x12\x16\n" +
+	"\x06reason\x18\r \x01(\tR\x06reason\"\xbb\x01\n" +
+	"\tDealTerms\x12\x16\n" +
+	"\x06amount\x18\x01 \x01(\tR\x06amount\x12\x1a\n" +
+	"\bcurrency\x18\x02 \x01(\tR\bcurrency\x12\x1a\n" +
+	"\bdeadline\x18\x03 \x01(\tR\bdeadline\x12-\n" +
+	"\x12revisions_included\x18\x04 \x01(\x05R\x11revisionsIncluded\x12/\n" +
+	"\x13acceptance_criteria\x18\x05 \x01(\tR\x12acceptanceCriteria\"\xae\x01\n" +
+	"\x0eDealSubmission\x12\x1c\n" +
+	"\titeration\x18\x01 \x01(\x03R\titeration\x12\x16\n" +
+	"\x06result\x18\x02 \x01(\tR\x06result\x12=\n" +
+	"\fsubmitted_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\vsubmittedAt\x12'\n" +
+	"\x0frevision_reason\x18\x04 \x01(\tR\x0erevisionReason\"\xa7\x02\n" +
+	"\x15SelectProposalRequest\x12\"\n" +
+	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x19\n" +
+	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x1f\n" +
+	"\vproposal_id\x18\x03 \x01(\tR\n" +
+	"proposalId\x12\x16\n" +
+	"\x06amount\x18\x04 \x01(\tR\x06amount\x12\x1a\n" +
+	"\bcurrency\x18\x05 \x01(\tR\bcurrency\x12\x1a\n" +
+	"\bdeadline\x18\x06 \x01(\tR\bdeadline\x12-\n" +
+	"\x12revisions_included\x18\a \x01(\x05R\x11revisionsIncluded\x12/\n" +
+	"\x13acceptance_criteria\x18\b \x01(\tR\x12acceptanceCriteria\"X\n" +
+	"\x17ConfirmDealTermsRequest\x12\"\n" +
+	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x19\n" +
+	"\border_id\x18\x02 \x01(\tR\aorderId\"p\n" +
+	"\x17DeclineDealTermsRequest\x12\"\n" +
+	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x19\n" +
+	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\x95\x01\n" +
+	"\x13SubmitResultRequest\x12\"\n" +
+	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x19\n" +
+	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x16\n" +
+	"\x06result\x18\x03 \x01(\tR\x06result\x12'\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\"T\n" +
+	"\x13AcceptResultRequest\x12\"\n" +
+	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x19\n" +
+	"\border_id\x18\x02 \x01(\tR\aorderId\"o\n" +
+	"\x16RequestRevisionRequest\x12\"\n" +
+	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x19\n" +
+	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"j\n" +
+	"\x11CancelDealRequest\x12\"\n" +
+	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x19\n" +
+	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"O\n" +
+	"\x0eGetDealRequest\x12\"\n" +
+	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x19\n" +
+	"\border_id\x18\x02 \x01(\tR\aorderId\"\x93\x04\n" +
 	"\x05Order\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12$\n" +
 	"\x0eauthor_user_id\x18\x02 \x01(\tR\fauthorUserId\x12\x14\n" +
@@ -1351,7 +2238,7 @@ const file_task_proto_rawDesc = "" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"S\n" +
 	"\x12DeleteDraftRequest\x12\"\n" +
 	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x19\n" +
-	"\border_id\x18\x02 \x01(\tR\aorderId\"\x82\x03\n" +
+	"\border_id\x18\x02 \x01(\tR\aorderId\"\xad\x03\n" +
 	"\rOrderProposal\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
 	"\border_id\x18\x02 \x01(\tR\aorderId\x12(\n" +
@@ -1364,7 +2251,8 @@ const file_task_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12=\n" +
 	"\fwithdrawn_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\vwithdrawnAt\"\xe7\x01\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\vwithdrawnAt\x12)\n" +
+	"\x10withdrawn_reason\x18\v \x01(\tR\x0fwithdrawnReason\"\xe7\x01\n" +
 	"\x1aCreateOrderProposalRequest\x12\"\n" +
 	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x19\n" +
 	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x18\n" +
@@ -1388,7 +2276,7 @@ const file_task_proto_rawDesc = "" +
 	"proposalId\"Z\n" +
 	"\x19GetMyOrderProposalRequest\x12\"\n" +
 	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x19\n" +
-	"\border_id\x18\x02 \x01(\tR\aorderId2\xb3\x06\n" +
+	"\border_id\x18\x02 \x01(\tR\aorderId2\xf7\t\n" +
 	"\vTaskService\x124\n" +
 	"\vCreateOrder\x12\x18.task.CreateOrderRequest\x1a\v.task.Order\x12.\n" +
 	"\bGetOrder\x12\x15.task.GetOrderRequest\x1a\v.task.Order\x124\n" +
@@ -1402,7 +2290,24 @@ const file_task_proto_rawDesc = "" +
 	"\x12ListOrderProposals\x12\x1f.task.ListOrderProposalsRequest\x1a .task.ListOrderProposalsResponse\x12P\n" +
 	"\x15WithdrawOrderProposal\x12\".task.WithdrawOrderProposalRequest\x1a\x13.task.OrderProposal\x12J\n" +
 	"\x12GetMyOrderProposal\x12\x1f.task.GetMyOrderProposalRequest\x1a\x13.task.OrderProposal\x12Z\n" +
-	"\x13ListPublishedOrders\x12 .task.ListPublishedOrdersRequest\x1a!.task.ListPublishedOrdersResponseB4Z2github.com/EryyynIT/workaly/auth-service/pb/taskpbb\x06proto3"
+	"\x13ListPublishedOrders\x12 .task.ListPublishedOrdersRequest\x1a!.task.ListPublishedOrdersResponse\x129\n" +
+	"\x0eSelectProposal\x12\x1b.task.SelectProposalRequest\x1a\n" +
+	".task.Deal\x12=\n" +
+	"\x10ConfirmDealTerms\x12\x1d.task.ConfirmDealTermsRequest\x1a\n" +
+	".task.Deal\x12=\n" +
+	"\x10DeclineDealTerms\x12\x1d.task.DeclineDealTermsRequest\x1a\n" +
+	".task.Deal\x125\n" +
+	"\fSubmitResult\x12\x19.task.SubmitResultRequest\x1a\n" +
+	".task.Deal\x125\n" +
+	"\fAcceptResult\x12\x19.task.AcceptResultRequest\x1a\n" +
+	".task.Deal\x12;\n" +
+	"\x0fRequestRevision\x12\x1c.task.RequestRevisionRequest\x1a\n" +
+	".task.Deal\x121\n" +
+	"\n" +
+	"CancelDeal\x12\x17.task.CancelDealRequest\x1a\n" +
+	".task.Deal\x12+\n" +
+	"\aGetDeal\x12\x14.task.GetDealRequest\x1a\n" +
+	".task.DealB4Z2github.com/EryyynIT/workaly/auth-service/pb/taskpbb\x06proto3"
 
 var (
 	file_task_proto_rawDescOnce sync.Once
@@ -1416,66 +2321,100 @@ func file_task_proto_rawDescGZIP() []byte {
 	return file_task_proto_rawDescData
 }
 
-var file_task_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_task_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
 var file_task_proto_goTypes = []any{
-	(*Order)(nil),                        // 0: task.Order
-	(*CreateOrderRequest)(nil),           // 1: task.CreateOrderRequest
-	(*GetOrderRequest)(nil),              // 2: task.GetOrderRequest
-	(*UpdateOrderRequest)(nil),           // 3: task.UpdateOrderRequest
-	(*PublishOrderRequest)(nil),          // 4: task.PublishOrderRequest
-	(*CloseOrderRequest)(nil),            // 5: task.CloseOrderRequest
-	(*ListMyOrdersRequest)(nil),          // 6: task.ListMyOrdersRequest
-	(*ListMyOrdersResponse)(nil),         // 7: task.ListMyOrdersResponse
-	(*ListPublishedOrdersRequest)(nil),   // 8: task.ListPublishedOrdersRequest
-	(*ListPublishedOrdersResponse)(nil),  // 9: task.ListPublishedOrdersResponse
-	(*DeleteDraftRequest)(nil),           // 10: task.DeleteDraftRequest
-	(*OrderProposal)(nil),                // 11: task.OrderProposal
-	(*CreateOrderProposalRequest)(nil),   // 12: task.CreateOrderProposalRequest
-	(*ListOrderProposalsRequest)(nil),    // 13: task.ListOrderProposalsRequest
-	(*ListOrderProposalsResponse)(nil),   // 14: task.ListOrderProposalsResponse
-	(*WithdrawOrderProposalRequest)(nil), // 15: task.WithdrawOrderProposalRequest
-	(*GetMyOrderProposalRequest)(nil),    // 16: task.GetMyOrderProposalRequest
-	(*timestamppb.Timestamp)(nil),        // 17: google.protobuf.Timestamp
+	(*Deal)(nil),                         // 0: task.Deal
+	(*DealTerms)(nil),                    // 1: task.DealTerms
+	(*DealSubmission)(nil),               // 2: task.DealSubmission
+	(*SelectProposalRequest)(nil),        // 3: task.SelectProposalRequest
+	(*ConfirmDealTermsRequest)(nil),      // 4: task.ConfirmDealTermsRequest
+	(*DeclineDealTermsRequest)(nil),      // 5: task.DeclineDealTermsRequest
+	(*SubmitResultRequest)(nil),          // 6: task.SubmitResultRequest
+	(*AcceptResultRequest)(nil),          // 7: task.AcceptResultRequest
+	(*RequestRevisionRequest)(nil),       // 8: task.RequestRevisionRequest
+	(*CancelDealRequest)(nil),            // 9: task.CancelDealRequest
+	(*GetDealRequest)(nil),               // 10: task.GetDealRequest
+	(*Order)(nil),                        // 11: task.Order
+	(*CreateOrderRequest)(nil),           // 12: task.CreateOrderRequest
+	(*GetOrderRequest)(nil),              // 13: task.GetOrderRequest
+	(*UpdateOrderRequest)(nil),           // 14: task.UpdateOrderRequest
+	(*PublishOrderRequest)(nil),          // 15: task.PublishOrderRequest
+	(*CloseOrderRequest)(nil),            // 16: task.CloseOrderRequest
+	(*ListMyOrdersRequest)(nil),          // 17: task.ListMyOrdersRequest
+	(*ListMyOrdersResponse)(nil),         // 18: task.ListMyOrdersResponse
+	(*ListPublishedOrdersRequest)(nil),   // 19: task.ListPublishedOrdersRequest
+	(*ListPublishedOrdersResponse)(nil),  // 20: task.ListPublishedOrdersResponse
+	(*DeleteDraftRequest)(nil),           // 21: task.DeleteDraftRequest
+	(*OrderProposal)(nil),                // 22: task.OrderProposal
+	(*CreateOrderProposalRequest)(nil),   // 23: task.CreateOrderProposalRequest
+	(*ListOrderProposalsRequest)(nil),    // 24: task.ListOrderProposalsRequest
+	(*ListOrderProposalsResponse)(nil),   // 25: task.ListOrderProposalsResponse
+	(*WithdrawOrderProposalRequest)(nil), // 26: task.WithdrawOrderProposalRequest
+	(*GetMyOrderProposalRequest)(nil),    // 27: task.GetMyOrderProposalRequest
+	(*timestamppb.Timestamp)(nil),        // 28: google.protobuf.Timestamp
 }
 var file_task_proto_depIdxs = []int32{
-	17, // 0: task.Order.created_at:type_name -> google.protobuf.Timestamp
-	17, // 1: task.Order.updated_at:type_name -> google.protobuf.Timestamp
-	17, // 2: task.Order.published_at:type_name -> google.protobuf.Timestamp
-	17, // 3: task.Order.closed_at:type_name -> google.protobuf.Timestamp
-	0,  // 4: task.ListMyOrdersResponse.orders:type_name -> task.Order
-	0,  // 5: task.ListPublishedOrdersResponse.orders:type_name -> task.Order
-	17, // 6: task.OrderProposal.created_at:type_name -> google.protobuf.Timestamp
-	17, // 7: task.OrderProposal.withdrawn_at:type_name -> google.protobuf.Timestamp
-	11, // 8: task.ListOrderProposalsResponse.proposals:type_name -> task.OrderProposal
-	1,  // 9: task.TaskService.CreateOrder:input_type -> task.CreateOrderRequest
-	2,  // 10: task.TaskService.GetOrder:input_type -> task.GetOrderRequest
-	3,  // 11: task.TaskService.UpdateOrder:input_type -> task.UpdateOrderRequest
-	4,  // 12: task.TaskService.PublishOrder:input_type -> task.PublishOrderRequest
-	5,  // 13: task.TaskService.CloseOrder:input_type -> task.CloseOrderRequest
-	6,  // 14: task.TaskService.ListMyOrders:input_type -> task.ListMyOrdersRequest
-	10, // 15: task.TaskService.DeleteDraft:input_type -> task.DeleteDraftRequest
-	12, // 16: task.TaskService.CreateOrderProposal:input_type -> task.CreateOrderProposalRequest
-	13, // 17: task.TaskService.ListOrderProposals:input_type -> task.ListOrderProposalsRequest
-	15, // 18: task.TaskService.WithdrawOrderProposal:input_type -> task.WithdrawOrderProposalRequest
-	16, // 19: task.TaskService.GetMyOrderProposal:input_type -> task.GetMyOrderProposalRequest
-	8,  // 20: task.TaskService.ListPublishedOrders:input_type -> task.ListPublishedOrdersRequest
-	0,  // 21: task.TaskService.CreateOrder:output_type -> task.Order
-	0,  // 22: task.TaskService.GetOrder:output_type -> task.Order
-	0,  // 23: task.TaskService.UpdateOrder:output_type -> task.Order
-	0,  // 24: task.TaskService.PublishOrder:output_type -> task.Order
-	0,  // 25: task.TaskService.CloseOrder:output_type -> task.Order
-	7,  // 26: task.TaskService.ListMyOrders:output_type -> task.ListMyOrdersResponse
-	0,  // 27: task.TaskService.DeleteDraft:output_type -> task.Order
-	11, // 28: task.TaskService.CreateOrderProposal:output_type -> task.OrderProposal
-	14, // 29: task.TaskService.ListOrderProposals:output_type -> task.ListOrderProposalsResponse
-	11, // 30: task.TaskService.WithdrawOrderProposal:output_type -> task.OrderProposal
-	11, // 31: task.TaskService.GetMyOrderProposal:output_type -> task.OrderProposal
-	9,  // 32: task.TaskService.ListPublishedOrders:output_type -> task.ListPublishedOrdersResponse
-	21, // [21:33] is the sub-list for method output_type
-	9,  // [9:21] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	1,  // 0: task.Deal.terms:type_name -> task.DealTerms
+	2,  // 1: task.Deal.submissions:type_name -> task.DealSubmission
+	28, // 2: task.Deal.created_at:type_name -> google.protobuf.Timestamp
+	28, // 3: task.Deal.started_at:type_name -> google.protobuf.Timestamp
+	28, // 4: task.Deal.submitted_at:type_name -> google.protobuf.Timestamp
+	28, // 5: task.Deal.decided_at:type_name -> google.protobuf.Timestamp
+	28, // 6: task.DealSubmission.submitted_at:type_name -> google.protobuf.Timestamp
+	28, // 7: task.Order.created_at:type_name -> google.protobuf.Timestamp
+	28, // 8: task.Order.updated_at:type_name -> google.protobuf.Timestamp
+	28, // 9: task.Order.published_at:type_name -> google.protobuf.Timestamp
+	28, // 10: task.Order.closed_at:type_name -> google.protobuf.Timestamp
+	11, // 11: task.ListMyOrdersResponse.orders:type_name -> task.Order
+	11, // 12: task.ListPublishedOrdersResponse.orders:type_name -> task.Order
+	28, // 13: task.OrderProposal.created_at:type_name -> google.protobuf.Timestamp
+	28, // 14: task.OrderProposal.withdrawn_at:type_name -> google.protobuf.Timestamp
+	22, // 15: task.ListOrderProposalsResponse.proposals:type_name -> task.OrderProposal
+	12, // 16: task.TaskService.CreateOrder:input_type -> task.CreateOrderRequest
+	13, // 17: task.TaskService.GetOrder:input_type -> task.GetOrderRequest
+	14, // 18: task.TaskService.UpdateOrder:input_type -> task.UpdateOrderRequest
+	15, // 19: task.TaskService.PublishOrder:input_type -> task.PublishOrderRequest
+	16, // 20: task.TaskService.CloseOrder:input_type -> task.CloseOrderRequest
+	17, // 21: task.TaskService.ListMyOrders:input_type -> task.ListMyOrdersRequest
+	21, // 22: task.TaskService.DeleteDraft:input_type -> task.DeleteDraftRequest
+	23, // 23: task.TaskService.CreateOrderProposal:input_type -> task.CreateOrderProposalRequest
+	24, // 24: task.TaskService.ListOrderProposals:input_type -> task.ListOrderProposalsRequest
+	26, // 25: task.TaskService.WithdrawOrderProposal:input_type -> task.WithdrawOrderProposalRequest
+	27, // 26: task.TaskService.GetMyOrderProposal:input_type -> task.GetMyOrderProposalRequest
+	19, // 27: task.TaskService.ListPublishedOrders:input_type -> task.ListPublishedOrdersRequest
+	3,  // 28: task.TaskService.SelectProposal:input_type -> task.SelectProposalRequest
+	4,  // 29: task.TaskService.ConfirmDealTerms:input_type -> task.ConfirmDealTermsRequest
+	5,  // 30: task.TaskService.DeclineDealTerms:input_type -> task.DeclineDealTermsRequest
+	6,  // 31: task.TaskService.SubmitResult:input_type -> task.SubmitResultRequest
+	7,  // 32: task.TaskService.AcceptResult:input_type -> task.AcceptResultRequest
+	8,  // 33: task.TaskService.RequestRevision:input_type -> task.RequestRevisionRequest
+	9,  // 34: task.TaskService.CancelDeal:input_type -> task.CancelDealRequest
+	10, // 35: task.TaskService.GetDeal:input_type -> task.GetDealRequest
+	11, // 36: task.TaskService.CreateOrder:output_type -> task.Order
+	11, // 37: task.TaskService.GetOrder:output_type -> task.Order
+	11, // 38: task.TaskService.UpdateOrder:output_type -> task.Order
+	11, // 39: task.TaskService.PublishOrder:output_type -> task.Order
+	11, // 40: task.TaskService.CloseOrder:output_type -> task.Order
+	18, // 41: task.TaskService.ListMyOrders:output_type -> task.ListMyOrdersResponse
+	11, // 42: task.TaskService.DeleteDraft:output_type -> task.Order
+	22, // 43: task.TaskService.CreateOrderProposal:output_type -> task.OrderProposal
+	25, // 44: task.TaskService.ListOrderProposals:output_type -> task.ListOrderProposalsResponse
+	22, // 45: task.TaskService.WithdrawOrderProposal:output_type -> task.OrderProposal
+	22, // 46: task.TaskService.GetMyOrderProposal:output_type -> task.OrderProposal
+	20, // 47: task.TaskService.ListPublishedOrders:output_type -> task.ListPublishedOrdersResponse
+	0,  // 48: task.TaskService.SelectProposal:output_type -> task.Deal
+	0,  // 49: task.TaskService.ConfirmDealTerms:output_type -> task.Deal
+	0,  // 50: task.TaskService.DeclineDealTerms:output_type -> task.Deal
+	0,  // 51: task.TaskService.SubmitResult:output_type -> task.Deal
+	0,  // 52: task.TaskService.AcceptResult:output_type -> task.Deal
+	0,  // 53: task.TaskService.RequestRevision:output_type -> task.Deal
+	0,  // 54: task.TaskService.CancelDeal:output_type -> task.Deal
+	0,  // 55: task.TaskService.GetDeal:output_type -> task.Deal
+	36, // [36:56] is the sub-list for method output_type
+	16, // [16:36] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_task_proto_init() }
@@ -1489,7 +2428,7 @@ func file_task_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_task_proto_rawDesc), len(file_task_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   28,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

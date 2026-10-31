@@ -31,6 +31,14 @@ const (
 	TaskService_WithdrawOrderProposal_FullMethodName = "/task.TaskService/WithdrawOrderProposal"
 	TaskService_GetMyOrderProposal_FullMethodName    = "/task.TaskService/GetMyOrderProposal"
 	TaskService_ListPublishedOrders_FullMethodName   = "/task.TaskService/ListPublishedOrders"
+	TaskService_SelectProposal_FullMethodName        = "/task.TaskService/SelectProposal"
+	TaskService_ConfirmDealTerms_FullMethodName      = "/task.TaskService/ConfirmDealTerms"
+	TaskService_DeclineDealTerms_FullMethodName      = "/task.TaskService/DeclineDealTerms"
+	TaskService_SubmitResult_FullMethodName          = "/task.TaskService/SubmitResult"
+	TaskService_AcceptResult_FullMethodName          = "/task.TaskService/AcceptResult"
+	TaskService_RequestRevision_FullMethodName       = "/task.TaskService/RequestRevision"
+	TaskService_CancelDeal_FullMethodName            = "/task.TaskService/CancelDeal"
+	TaskService_GetDeal_FullMethodName               = "/task.TaskService/GetDeal"
 )
 
 // TaskServiceClient is the client API for TaskService service.
@@ -44,7 +52,11 @@ const (
 // anything not owned by the actor is reported as not found so existence is
 // never disclosed.
 //
-// State machine: draft -> published -> closed. Closed is terminal in S2.
+// State machine: draft -> published -> closed, and after the executor
+// selection published -> in_progress -> submitted -> completed, or
+// in_progress/revision_requested -> cancelled (S3, docs/s3-hiring.md).
+// Closing is possible only before the selection; a started order is
+// finished by the deal (completed) or cancelled, never closed.
 // `version` starts at 1 and is bumped by every successful mutation of the
 // order itself; update calls must carry the version the caller saw, a
 // mismatch is reported as FailedPrecondition so the edge maps it to 409.
@@ -86,6 +98,39 @@ type TaskServiceClient interface {
 	// (published_at, id). Anonymous callers get the same view as logged-in
 	// users; there is no actor in the request.
 	ListPublishedOrders(ctx context.Context, in *ListPublishedOrdersRequest, opts ...grpc.CallOption) (*ListPublishedOrdersResponse, error)
+	// Deal pipeline of the order (S3.2, decisions 2-3 of docs/s3-hiring.md).
+	// SelectProposal: the order author picks an active proposal and fixes the
+	// confirmed terms v1. Terms equal to the proposal start the deal at once
+	// (in_progress); diverging terms wait for the executor (terms_pending).
+	// The selection is transactional with the order: the order becomes
+	// in_progress and its other active proposals are auto-withdrawn with the
+	// system reason "executor_selected". A concurrent second selection is
+	// reported as AlreadyExists (409).
+	SelectProposal(ctx context.Context, in *SelectProposalRequest, opts ...grpc.CallOption) (*Deal, error)
+	// ConfirmDealTerms / DeclineDealTerms: the executor answers terms_pending.
+	// Declining cancels the selection atomically: the deal and its terms are
+	// deleted, the order returns to published, the chosen proposal returns to
+	// active, auto-withdrawn proposals of the same selection are restored.
+	ConfirmDealTerms(ctx context.Context, in *ConfirmDealTermsRequest, opts ...grpc.CallOption) (*Deal, error)
+	DeclineDealTerms(ctx context.Context, in *DeclineDealTermsRequest, opts ...grpc.CallOption) (*Deal, error)
+	// SubmitResult: the executor delivers. in_progress -> submitted on the
+	// first delivery, revision_requested -> submitted on every next one; each
+	// delivery appends an immutable submission row and bumps the deal version.
+	SubmitResult(ctx context.Context, in *SubmitResultRequest, opts ...grpc.CallOption) (*Deal, error)
+	// AcceptResult: the author accepts the last submission (submitted ->
+	// completed, terminal; the order is completed in the same transaction).
+	AcceptResult(ctx context.Context, in *AcceptResultRequest, opts ...grpc.CallOption) (*Deal, error)
+	// RequestRevision: the author sends the last submission back
+	// (submitted -> revision_requested). Requires a reason; bounded by
+	// terms.revisions_included, an exhausted budget is FailedPrecondition.
+	RequestRevision(ctx context.Context, in *RequestRevisionRequest, opts ...grpc.CallOption) (*Deal, error)
+	// CancelDeal: the author cancels before the first submission
+	// (in_progress/revision_requested -> cancelled, terminal; the order is
+	// cancelled in the same transaction). The reason is mandatory.
+	CancelDeal(ctx context.Context, in *CancelDealRequest, opts ...grpc.CallOption) (*Deal, error)
+	// GetDeal: the deal of an order, visible to both parties only; a stranger
+	// gets the same 404 as a missing deal.
+	GetDeal(ctx context.Context, in *GetDealRequest, opts ...grpc.CallOption) (*Deal, error)
 }
 
 type taskServiceClient struct {
@@ -216,6 +261,86 @@ func (c *taskServiceClient) ListPublishedOrders(ctx context.Context, in *ListPub
 	return out, nil
 }
 
+func (c *taskServiceClient) SelectProposal(ctx context.Context, in *SelectProposalRequest, opts ...grpc.CallOption) (*Deal, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Deal)
+	err := c.cc.Invoke(ctx, TaskService_SelectProposal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *taskServiceClient) ConfirmDealTerms(ctx context.Context, in *ConfirmDealTermsRequest, opts ...grpc.CallOption) (*Deal, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Deal)
+	err := c.cc.Invoke(ctx, TaskService_ConfirmDealTerms_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *taskServiceClient) DeclineDealTerms(ctx context.Context, in *DeclineDealTermsRequest, opts ...grpc.CallOption) (*Deal, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Deal)
+	err := c.cc.Invoke(ctx, TaskService_DeclineDealTerms_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *taskServiceClient) SubmitResult(ctx context.Context, in *SubmitResultRequest, opts ...grpc.CallOption) (*Deal, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Deal)
+	err := c.cc.Invoke(ctx, TaskService_SubmitResult_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *taskServiceClient) AcceptResult(ctx context.Context, in *AcceptResultRequest, opts ...grpc.CallOption) (*Deal, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Deal)
+	err := c.cc.Invoke(ctx, TaskService_AcceptResult_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *taskServiceClient) RequestRevision(ctx context.Context, in *RequestRevisionRequest, opts ...grpc.CallOption) (*Deal, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Deal)
+	err := c.cc.Invoke(ctx, TaskService_RequestRevision_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *taskServiceClient) CancelDeal(ctx context.Context, in *CancelDealRequest, opts ...grpc.CallOption) (*Deal, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Deal)
+	err := c.cc.Invoke(ctx, TaskService_CancelDeal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *taskServiceClient) GetDeal(ctx context.Context, in *GetDealRequest, opts ...grpc.CallOption) (*Deal, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Deal)
+	err := c.cc.Invoke(ctx, TaskService_GetDeal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // TaskServiceServer is the server API for TaskService service.
 // All implementations must embed UnimplementedTaskServiceServer
 // for forward compatibility.
@@ -227,7 +352,11 @@ func (c *taskServiceClient) ListPublishedOrders(ctx context.Context, in *ListPub
 // anything not owned by the actor is reported as not found so existence is
 // never disclosed.
 //
-// State machine: draft -> published -> closed. Closed is terminal in S2.
+// State machine: draft -> published -> closed, and after the executor
+// selection published -> in_progress -> submitted -> completed, or
+// in_progress/revision_requested -> cancelled (S3, docs/s3-hiring.md).
+// Closing is possible only before the selection; a started order is
+// finished by the deal (completed) or cancelled, never closed.
 // `version` starts at 1 and is bumped by every successful mutation of the
 // order itself; update calls must carry the version the caller saw, a
 // mismatch is reported as FailedPrecondition so the edge maps it to 409.
@@ -269,6 +398,39 @@ type TaskServiceServer interface {
 	// (published_at, id). Anonymous callers get the same view as logged-in
 	// users; there is no actor in the request.
 	ListPublishedOrders(context.Context, *ListPublishedOrdersRequest) (*ListPublishedOrdersResponse, error)
+	// Deal pipeline of the order (S3.2, decisions 2-3 of docs/s3-hiring.md).
+	// SelectProposal: the order author picks an active proposal and fixes the
+	// confirmed terms v1. Terms equal to the proposal start the deal at once
+	// (in_progress); diverging terms wait for the executor (terms_pending).
+	// The selection is transactional with the order: the order becomes
+	// in_progress and its other active proposals are auto-withdrawn with the
+	// system reason "executor_selected". A concurrent second selection is
+	// reported as AlreadyExists (409).
+	SelectProposal(context.Context, *SelectProposalRequest) (*Deal, error)
+	// ConfirmDealTerms / DeclineDealTerms: the executor answers terms_pending.
+	// Declining cancels the selection atomically: the deal and its terms are
+	// deleted, the order returns to published, the chosen proposal returns to
+	// active, auto-withdrawn proposals of the same selection are restored.
+	ConfirmDealTerms(context.Context, *ConfirmDealTermsRequest) (*Deal, error)
+	DeclineDealTerms(context.Context, *DeclineDealTermsRequest) (*Deal, error)
+	// SubmitResult: the executor delivers. in_progress -> submitted on the
+	// first delivery, revision_requested -> submitted on every next one; each
+	// delivery appends an immutable submission row and bumps the deal version.
+	SubmitResult(context.Context, *SubmitResultRequest) (*Deal, error)
+	// AcceptResult: the author accepts the last submission (submitted ->
+	// completed, terminal; the order is completed in the same transaction).
+	AcceptResult(context.Context, *AcceptResultRequest) (*Deal, error)
+	// RequestRevision: the author sends the last submission back
+	// (submitted -> revision_requested). Requires a reason; bounded by
+	// terms.revisions_included, an exhausted budget is FailedPrecondition.
+	RequestRevision(context.Context, *RequestRevisionRequest) (*Deal, error)
+	// CancelDeal: the author cancels before the first submission
+	// (in_progress/revision_requested -> cancelled, terminal; the order is
+	// cancelled in the same transaction). The reason is mandatory.
+	CancelDeal(context.Context, *CancelDealRequest) (*Deal, error)
+	// GetDeal: the deal of an order, visible to both parties only; a stranger
+	// gets the same 404 as a missing deal.
+	GetDeal(context.Context, *GetDealRequest) (*Deal, error)
 	mustEmbedUnimplementedTaskServiceServer()
 }
 
@@ -314,6 +476,30 @@ func (UnimplementedTaskServiceServer) GetMyOrderProposal(context.Context, *GetMy
 }
 func (UnimplementedTaskServiceServer) ListPublishedOrders(context.Context, *ListPublishedOrdersRequest) (*ListPublishedOrdersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListPublishedOrders not implemented")
+}
+func (UnimplementedTaskServiceServer) SelectProposal(context.Context, *SelectProposalRequest) (*Deal, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SelectProposal not implemented")
+}
+func (UnimplementedTaskServiceServer) ConfirmDealTerms(context.Context, *ConfirmDealTermsRequest) (*Deal, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ConfirmDealTerms not implemented")
+}
+func (UnimplementedTaskServiceServer) DeclineDealTerms(context.Context, *DeclineDealTermsRequest) (*Deal, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeclineDealTerms not implemented")
+}
+func (UnimplementedTaskServiceServer) SubmitResult(context.Context, *SubmitResultRequest) (*Deal, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SubmitResult not implemented")
+}
+func (UnimplementedTaskServiceServer) AcceptResult(context.Context, *AcceptResultRequest) (*Deal, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AcceptResult not implemented")
+}
+func (UnimplementedTaskServiceServer) RequestRevision(context.Context, *RequestRevisionRequest) (*Deal, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RequestRevision not implemented")
+}
+func (UnimplementedTaskServiceServer) CancelDeal(context.Context, *CancelDealRequest) (*Deal, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CancelDeal not implemented")
+}
+func (UnimplementedTaskServiceServer) GetDeal(context.Context, *GetDealRequest) (*Deal, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetDeal not implemented")
 }
 func (UnimplementedTaskServiceServer) mustEmbedUnimplementedTaskServiceServer() {}
 func (UnimplementedTaskServiceServer) testEmbeddedByValue()                     {}
@@ -552,6 +738,150 @@ func _TaskService_ListPublishedOrders_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TaskService_SelectProposal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SelectProposalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskServiceServer).SelectProposal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskService_SelectProposal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskServiceServer).SelectProposal(ctx, req.(*SelectProposalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TaskService_ConfirmDealTerms_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmDealTermsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskServiceServer).ConfirmDealTerms(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskService_ConfirmDealTerms_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskServiceServer).ConfirmDealTerms(ctx, req.(*ConfirmDealTermsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TaskService_DeclineDealTerms_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeclineDealTermsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskServiceServer).DeclineDealTerms(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskService_DeclineDealTerms_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskServiceServer).DeclineDealTerms(ctx, req.(*DeclineDealTermsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TaskService_SubmitResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitResultRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskServiceServer).SubmitResult(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskService_SubmitResult_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskServiceServer).SubmitResult(ctx, req.(*SubmitResultRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TaskService_AcceptResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AcceptResultRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskServiceServer).AcceptResult(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskService_AcceptResult_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskServiceServer).AcceptResult(ctx, req.(*AcceptResultRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TaskService_RequestRevision_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestRevisionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskServiceServer).RequestRevision(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskService_RequestRevision_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskServiceServer).RequestRevision(ctx, req.(*RequestRevisionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TaskService_CancelDeal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelDealRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskServiceServer).CancelDeal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskService_CancelDeal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskServiceServer).CancelDeal(ctx, req.(*CancelDealRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TaskService_GetDeal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDealRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskServiceServer).GetDeal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskService_GetDeal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskServiceServer).GetDeal(ctx, req.(*GetDealRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // TaskService_ServiceDesc is the grpc.ServiceDesc for TaskService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -606,6 +936,38 @@ var TaskService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListPublishedOrders",
 			Handler:    _TaskService_ListPublishedOrders_Handler,
+		},
+		{
+			MethodName: "SelectProposal",
+			Handler:    _TaskService_SelectProposal_Handler,
+		},
+		{
+			MethodName: "ConfirmDealTerms",
+			Handler:    _TaskService_ConfirmDealTerms_Handler,
+		},
+		{
+			MethodName: "DeclineDealTerms",
+			Handler:    _TaskService_DeclineDealTerms_Handler,
+		},
+		{
+			MethodName: "SubmitResult",
+			Handler:    _TaskService_SubmitResult_Handler,
+		},
+		{
+			MethodName: "AcceptResult",
+			Handler:    _TaskService_AcceptResult_Handler,
+		},
+		{
+			MethodName: "RequestRevision",
+			Handler:    _TaskService_RequestRevision_Handler,
+		},
+		{
+			MethodName: "CancelDeal",
+			Handler:    _TaskService_CancelDeal_Handler,
+		},
+		{
+			MethodName: "GetDeal",
+			Handler:    _TaskService_GetDeal_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

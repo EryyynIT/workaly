@@ -39,20 +39,21 @@ func validateProposal(message, amount, currency, proposedDeadline string) error 
 // See orderColumns: to_char pins the ISO format regardless of DateStyle.
 const proposalColumns = `id, order_id, executor_user_id, message,
 	proposed_amount::text, currency, to_char(proposed_deadline, 'YYYY-MM-DD'), status,
-	created_at, withdrawn_at`
+	created_at, withdrawn_at, withdrawn_reason`
 
 func scanProposal(row rowScanner) (*taskpb.OrderProposal, error) {
 	var p taskpb.OrderProposal
-	var proposedDeadline sql.NullString
+	var proposedDeadline, withdrawnReason sql.NullString
 	var createdAt time.Time
 	var withdrawnAt sql.NullTime
 	err := row.Scan(&p.Id, &p.OrderId, &p.ExecutorUserId, &p.Message,
 		&p.ProposedAmount, &p.Currency, &proposedDeadline, &p.Status,
-		&createdAt, &withdrawnAt)
+		&createdAt, &withdrawnAt, &withdrawnReason)
 	if err != nil {
 		return nil, err
 	}
 	p.ProposedDeadline = proposedDeadline.String
+	p.WithdrawnReason = withdrawnReason.String
 	p.CreatedAt = timestamppb.New(createdAt)
 	if withdrawnAt.Valid {
 		p.WithdrawnAt = timestamppb.New(withdrawnAt.Time)
@@ -70,9 +71,17 @@ func (s *taskService) CreateOrderProposal(ctx context.Context, req *taskpb.Creat
 	if err := validateProposal(req.Message, req.ProposedAmount, req.Currency, req.ProposedDeadline); err != nil {
 		return nil, err
 	}
-	var author string
-	err := s.db.QueryRowContext(ctx, `SELECT author_user_id FROM orders WHERE id = $1`, req.OrderId).
-		Scan(&author)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, mapDBError(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	// Selection and withdrawal take the same order lock first. Holding it
+	// through INSERT means a proposal is either included in selection's
+	// auto-withdrawal, or rejected after selection has moved the order.
+	var author, orderStatus string
+	err = tx.QueryRowContext(ctx, `SELECT author_user_id, status FROM orders WHERE id = $1 FOR UPDATE`, req.OrderId).
+		Scan(&author, &orderStatus)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, notFound()
 	}
@@ -82,23 +91,21 @@ func (s *taskService) CreateOrderProposal(ctx context.Context, req *taskpb.Creat
 	if author == req.ActorUserId {
 		return nil, invalid("the order author cannot propose for their own order")
 	}
-	// The status gate is part of the INSERT itself: an order closing between
-	// a read and the write cannot accept a proposal. A draft, closed or
-	// vanished order reports the same 404 — existence stays undisclosed.
-	row := s.db.QueryRowContext(ctx, `INSERT INTO order_proposals
-		(order_id, executor_user_id, message, proposed_amount, currency, proposed_deadline)
-		SELECT id, $2, $3, $4::numeric, $5::char(3), NULLIF($6, '')::date FROM orders
-		WHERE id = $1 AND status = 'published'
-		RETURNING `+proposalColumns,
-		req.OrderId, req.ActorUserId, req.Message, req.ProposedAmount, req.Currency, req.ProposedDeadline)
-	p, err := scanProposal(row)
-	if errors.Is(err, sql.ErrNoRows) {
+	if orderStatus != "published" {
 		return nil, notFound()
 	}
+	p, err := scanProposal(tx.QueryRowContext(ctx, `INSERT INTO order_proposals
+		(order_id, executor_user_id, message, proposed_amount, currency, proposed_deadline)
+		VALUES ($1, $2, $3, $4::numeric, $5::char(3), NULLIF($6, '')::date)
+		RETURNING `+proposalColumns,
+		req.OrderId, req.ActorUserId, req.Message, req.ProposedAmount, req.Currency, req.ProposedDeadline))
 	if err != nil {
 		if isDuplicateKey(err, "order_proposals_one_active") {
 			return nil, status.Error(codes.AlreadyExists, "you already have an active proposal for this order")
 		}
+		return nil, mapDBError(err)
+	}
+	if err := tx.Commit(); err != nil {
 		return nil, mapDBError(err)
 	}
 	return p, nil
@@ -188,10 +195,26 @@ func (s *taskService) WithdrawOrderProposal(ctx context.Context, req *taskpb.Wit
 	if !validUUID(req.OrderId) || !validUUID(req.ProposalId) {
 		return nil, invalid("order_id and proposal_id must be UUIDs")
 	}
-	var executor string
-	var status_ string
-	err := s.db.QueryRowContext(ctx, `SELECT executor_user_id, status FROM order_proposals
-		WHERE id = $1 AND order_id = $2`, req.ProposalId, req.OrderId).Scan(&executor, &status_)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, mapDBError(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	// Selection locks order then proposal. Take those locks in the same
+	// order, so a withdrawal cannot race a selected proposal into a deal.
+	var author, orderStatus string
+	err = tx.QueryRowContext(ctx, `SELECT author_user_id, status FROM orders WHERE id = $1 FOR UPDATE`, req.OrderId).
+		Scan(&author, &orderStatus)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, notFound()
+	}
+	if err != nil {
+		return nil, mapDBError(err)
+	}
+	var executor, proposalStatus string
+	err = tx.QueryRowContext(ctx, `SELECT executor_user_id, status FROM order_proposals
+		WHERE id = $1 AND order_id = $2 FOR UPDATE`, req.ProposalId, req.OrderId).
+		Scan(&executor, &proposalStatus)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, notFound()
 	}
@@ -201,18 +224,23 @@ func (s *taskService) WithdrawOrderProposal(ctx context.Context, req *taskpb.Wit
 	if executor != req.ActorUserId {
 		return nil, notFound()
 	}
-	if status_ == "withdrawn" {
+	if proposalStatus == "withdrawn" {
 		return nil, precondition("proposal is already withdrawn")
 	}
-	row := s.db.QueryRowContext(ctx, `UPDATE order_proposals
+	if orderStatus != "published" {
+		return nil, precondition("order is %s; proposals can only be withdrawn while published", orderStatus)
+	}
+	p, err := scanProposal(tx.QueryRowContext(ctx, `UPDATE order_proposals
 		SET status = 'withdrawn', withdrawn_at = CURRENT_TIMESTAMP
 		WHERE id = $1 AND order_id = $2 AND executor_user_id = $3 AND status = 'active'
-		RETURNING `+proposalColumns, req.ProposalId, req.OrderId, req.ActorUserId)
-	p, err := scanProposal(row)
+		RETURNING `+proposalColumns, req.ProposalId, req.OrderId, req.ActorUserId))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, precondition("proposal changed concurrently; reload and retry")
 	}
 	if err != nil {
+		return nil, mapDBError(err)
+	}
+	if err := tx.Commit(); err != nil {
 		return nil, mapDBError(err)
 	}
 	return p, nil

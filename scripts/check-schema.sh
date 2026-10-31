@@ -40,9 +40,14 @@ must_reject() {
 AUTHOR=00000000-0000-0000-0000-000000000001
 RESPONDER=00000000-0000-0000-0000-000000000002
 
-# Fresh probe data on every run; the vacancy delete cascades its responses.
+# Fresh probe data on every run; the vacancy delete cascades its responses,
+# the order delete cascades its proposals and deals. Deals can also point at
+# probe proposals of earlier runs (they carry no probe marker of their own),
+# so deals of the probe customer go first.
 must_succeed "${J[@]}" -c "DELETE FROM vacancy_responses WHERE candidate_user_id = '$RESPONDER'"
 must_succeed "${J[@]}" -c "DELETE FROM vacancies WHERE title = '__schema_probe__'"
+must_succeed "${T[@]}" -c "DELETE FROM deal_submissions WHERE deal_id IN (SELECT id FROM deals WHERE order_id IN (SELECT id FROM orders WHERE title = '__schema_probe__') OR customer_user_id = '$AUTHOR')"
+must_succeed "${T[@]}" -c "DELETE FROM deals WHERE customer_user_id = '$AUTHOR'"
 must_succeed "${T[@]}" -c "DELETE FROM order_proposals WHERE executor_user_id = '$RESPONDER'"
 must_succeed "${T[@]}" -c "DELETE FROM orders WHERE title = '__schema_probe__'"
 
@@ -85,5 +90,22 @@ must_succeed "${T[@]}" -c "INSERT INTO order_proposals (order_id, executor_user_
 must_reject "order_proposals_one_active" "${T[@]}" -c "INSERT INTO order_proposals (order_id, executor_user_id, message, proposed_amount, currency) VALUES ('$OID', '$RESPONDER', 'probe', 400, 'RUB')"
 must_succeed "${T[@]}" -c "UPDATE order_proposals SET status = 'withdrawn', withdrawn_at = now() WHERE executor_user_id = '$RESPONDER' AND status = 'active'"
 must_succeed "${T[@]}" -c "INSERT INTO order_proposals (order_id, executor_user_id, message, proposed_amount, currency) VALUES ('$OID', '$RESPONDER', 'probe after withdraw', 450, 'RUB')"
+
+# S3.2 deals: the widened order status enum, the deal shape and one deal
+# per order.
+must_succeed "${T[@]}" -c "UPDATE orders SET status = 'in_progress' WHERE id = '$OID'"
+PID=$("${T[@]}" -c "SELECT id FROM order_proposals WHERE order_id = '$OID' AND status = 'active' LIMIT 1" | head -1)
+[ -n "$PID" ] || fail "probe proposal id missing"
+must_succeed "${T[@]}" -c "INSERT INTO deals (order_id, customer_user_id, executor_user_id, proposal_id, status, amount, currency) VALUES ('$OID', '$AUTHOR', '$RESPONDER', '$PID', 'in_progress', 450, 'RUB')"
+must_reject "deals_one_per_order" "${T[@]}" -c "INSERT INTO deals (order_id, customer_user_id, executor_user_id, proposal_id, status, amount, currency) VALUES ('$OID', '$AUTHOR', '$AUTHOR', '$PID', 'terms_pending', 1, 'RUB')"
+must_reject "deals_amount_positive" "${T[@]}" -c "UPDATE deals SET amount = 0 WHERE order_id = '$OID'"
+must_reject "deals_revisions_nonnegative" "${T[@]}" -c "UPDATE deals SET revisions_included = -1 WHERE order_id = '$OID'"
+must_reject "deals_reason_len" "${T[@]}" -c "UPDATE deals SET reason = repeat('x', 1001) WHERE order_id = '$OID'"
+must_reject "deals_status" "${T[@]}" -c "UPDATE deals SET status = 'teleported' WHERE order_id = '$OID'"
+DID=$("${T[@]}" -c "SELECT id FROM deals WHERE order_id = '$OID'" | head -1)
+must_succeed "${T[@]}" -c "INSERT INTO deal_submissions (deal_id, iteration, result) VALUES ('$DID', 1, 'probe delivery')"
+must_reject "deal_submissions_iteration" "${T[@]}" -c "INSERT INTO deal_submissions (deal_id, iteration, result) VALUES ('$DID', 1, 'duplicate')"
+must_reject "deal_submissions_result_len" "${T[@]}" -c "INSERT INTO deal_submissions (deal_id, iteration, result) VALUES ('$DID', 2, '')"
+must_reject "orders_status" "${T[@]}" -c "UPDATE orders SET status = 'teleported' WHERE id = '$OID'"
 
 echo "check-schema: PASS (catalog constraints enforced)"

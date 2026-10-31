@@ -131,6 +131,18 @@ func (app *application) router() *gin.Engine {
 	router.GET("/orders/:id/proposals", app.listOrderProposals)
 	router.GET("/orders/:id/proposals/mine", app.getMyOrderProposal)
 	router.POST("/orders/:id/proposals/:pid/withdraw", app.jsonRequest, app.withdrawOrderProposal)
+	// Deal pipeline of the order (S3.2, docs/s3-hiring.md decisions 2-3):
+	// the customer selects a proposal with the confirmed terms v1, the
+	// executor answers a diverging handshake, then submit/accept/revision
+	// and the cancellation with a mandatory reason.
+	router.POST("/orders/:id/proposals/:pid/select", app.jsonRequest, app.selectProposal)
+	router.GET("/orders/:id/deal", app.getDeal)
+	router.POST("/orders/:id/deal/confirm", app.jsonRequest, app.confirmDealTerms)
+	router.POST("/orders/:id/deal/decline", app.jsonRequest, app.declineDealTerms)
+	router.POST("/orders/:id/deal/submit", app.jsonRequest, app.submitDealResult)
+	router.POST("/orders/:id/deal/accept", app.jsonRequest, app.acceptDealResult)
+	router.POST("/orders/:id/deal/revision", app.jsonRequest, app.requestDealRevision)
+	router.POST("/orders/:id/deal/cancel", app.jsonRequest, app.cancelDeal)
 	return router
 }
 

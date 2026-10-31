@@ -427,8 +427,11 @@ type proposalView struct {
 	Currency         string  `json:"currency"`
 	ProposedDeadline *string `json:"proposed_deadline"`
 	Status           string  `json:"status"`
-	CreatedAt        string  `json:"created_at"`
-	WithdrawnAt      *string `json:"withdrawn_at"`
+	// System reason of an automatic withdrawal ("executor_selected"); null
+	// for the executor's own withdrawal.
+	WithdrawnReason *string `json:"withdrawn_reason"`
+	CreatedAt       string  `json:"created_at"`
+	WithdrawnAt     *string `json:"withdrawn_at"`
 }
 
 func proposalJSON(p *taskpb.OrderProposal) *proposalView {
@@ -442,6 +445,9 @@ func proposalJSON(p *taskpb.OrderProposal) *proposalView {
 		Status:         p.Status,
 		CreatedAt:      utcString(p.CreatedAt),
 		WithdrawnAt:    optionalTimestamp(p.WithdrawnAt),
+	}
+	if p.WithdrawnReason != "" {
+		view.WithdrawnReason = &p.WithdrawnReason
 	}
 	if p.ProposedDeadline != "" {
 		view.ProposedDeadline = &p.ProposedDeadline

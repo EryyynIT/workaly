@@ -442,6 +442,179 @@ def order_flow():
     print("PASS: order flow — author CRUD, email gate, optimistic version, one active proposal, withdraw, close")
 
 
+def deal_flow():
+    """The S3.2 deal pipeline: selection, handshake, delivery, revision,
+    acceptance, cancellation and the side/visibility rules."""
+    customer_email, customer, _ = register_account("smoke-deal-customer")
+    assert request("/verify-email", {"token": dev_verify_token(customer_email)})[0] == 200
+    executor_email, executor, executor_id = register_account("smoke-deal-executor")
+    assert request("/verify-email", {"token": dev_verify_token(executor_email)})[0] == 200
+    other_email, other, _ = register_account("smoke-deal-other")
+    assert request("/verify-email", {"token": dev_verify_token(other_email)})[0] == 200
+    _, stranger, _ = register_account("smoke-deal-stranger")
+
+    def new_order(title):
+        code, _, draft = request("/orders", order_fields(title), cookie=customer)
+        assert code == 201, (code, draft)
+        assert request(f"/orders/{draft['id']}/publish", cookie=customer, method="POST")[0] == 200
+        return draft["id"]
+
+    # Closing remains available from draft, before any executor is selected.
+    code, _, draft_to_close = request("/orders", order_fields("Черновик для закрытия"), cookie=customer)
+    assert code == 201 and draft_to_close["status"] == "draft", (code, draft_to_close)
+    code, _, closed_draft = request(f"/orders/{draft_to_close['id']}/close", cookie=customer, method="POST")
+    assert code == 200 and closed_draft["status"] == "closed", (code, closed_draft)
+
+    def propose(order_id, who, amount="90000", deadline="2026-11-30"):
+        body = {"message": "Готов взяться.", "proposed_amount": amount, "currency": "RUB",
+                "proposed_deadline": deadline}
+        code, _, prop = request(f"/orders/{order_id}/proposals", body, cookie=who)
+        assert code == 201, (code, prop)
+        return prop
+
+    # --- Happy path without a handshake: equal terms start the deal at once.
+    order_id = new_order("Сделка без рукопожатия")
+    prop = propose(order_id, executor)
+    other_prop = propose(order_id, other, amount="80000")
+    # A stranger and the executor cannot select; the deal is invisible to them.
+    assert request(f"/orders/{order_id}/proposals/{prop['id']}/select", {}, cookie=stranger, method="POST")[0] == 404
+    assert request(f"/orders/{order_id}/deal", cookie=stranger)[0] == 404
+    assert request(f"/orders/{order_id}/deal", cookie=executor)[0] == 404
+    code, _, deal = request(f"/orders/{order_id}/proposals/{prop['id']}/select",
+                            {"revisions_included": 2}, cookie=customer, method="POST")
+    assert code == 201 and deal["status"] == "terms_pending", (code, deal)
+    code, _, deal = request(f"/orders/{order_id}/deal/confirm", cookie=executor, method="POST")
+    assert code == 200 and deal["status"] == "in_progress", (code, deal)
+    assert deal["terms"]["amount"] == "90000.00" and deal["terms"]["deadline"] == "2026-11-30", deal
+    assert deal["executor_user_id"] == executor_id and deal["started_at"], deal
+    # The order moved with the deal; the losing proposal was auto-withdrawn.
+    code, _, order = request(f"/orders/{order_id}", cookie=customer)
+    assert code == 200 and order["status"] == "in_progress", (code, order)
+    code, _, props = request(f"/orders/{order_id}/proposals", cookie=customer)
+    by_id = {p["id"]: p for p in props["proposals"]}
+    assert by_id[other_prop["id"]]["status"] == "withdrawn", by_id
+    assert by_id[other_prop["id"]]["withdrawn_reason"] == "executor_selected", by_id
+    assert by_id[prop["id"]]["status"] == "active", by_id
+    # A second selection is a conflict; the order no longer accepts proposals.
+    code, _, body = request(f"/orders/{order_id}/proposals/{prop['id']}/select",
+                            {}, cookie=customer, method="POST")
+    assert code == 409, (code, body)
+    code, _, body = request(f"/orders/{order_id}/proposals",
+                            {"message": "ещё один", "proposed_amount": "1", "currency": "RUB"}, cookie=other)
+    assert code == 404, (code, body)  # a started order is not published anymore
+    # The executor sees the deal now; the wrong side cannot act.
+    code, _, mine = request(f"/orders/{order_id}/deal", cookie=executor)
+    assert code == 200 and mine["id"] == deal["id"], (code, mine)
+    assert request(f"/orders/{order_id}/deal/accept", cookie=executor, method="POST")[0] == 404
+    assert request(f"/orders/{order_id}/deal/submit", {"result": "x", "idempotency_key": "wrong-side-key"}, cookie=customer, method="POST")[0] == 404
+    # A started order is never closed.
+    code, _, body = request(f"/orders/{order_id}/close", cookie=customer, method="POST")
+    assert code == 409, (code, body)
+
+    # Delivery -> revision (with a mandatory reason) -> delivery -> acceptance.
+    code, _, body = request(f"/orders/{order_id}/deal/revision", {"reason": "рано"}, cookie=customer, method="POST")
+    assert code == 409 and "requires submitted" in body["error"], (code, body)
+    code, _, deal = request(f"/orders/{order_id}/deal/submit", {"result": "первая итерация", "idempotency_key": "submit-order1-iteration1"}, cookie=executor, method="POST")
+    assert code == 200 and deal["status"] == "submitted" and len(deal["submissions"]) == 1, (code, deal)
+    # An identical retry after an indeterminate response recovers the
+    # committed submission instead of appending another iteration.
+    retry_code, _, retry_deal = request(f"/orders/{order_id}/deal/submit", {"result": "первая итерация", "idempotency_key": "submit-order1-iteration1"}, cookie=executor, method="POST")
+    assert retry_code == 200 and retry_deal["version"] == deal["version"] and len(retry_deal["submissions"]) == 1, (retry_code, retry_deal)
+    code, _, order = request(f"/orders/{order_id}", cookie=customer)
+    assert order["status"] == "submitted", order
+    # Cancellation after a submission is impossible; the reason is mandatory.
+    code, _, body = request(f"/orders/{order_id}/deal/cancel", {"reason": "поздно"}, cookie=customer, method="POST")
+    assert code == 409, (code, body)
+    assert request(f"/orders/{order_id}/deal/cancel", {}, cookie=customer, method="POST")[0] == 400
+    code, _, deal = request(f"/orders/{order_id}/deal/revision", {"reason": "поправить шапку"}, cookie=customer, method="POST")
+    assert code == 200 and deal["status"] == "revision_requested", (code, deal)
+    assert deal["submissions"][0]["revision_reason"] == "поправить шапку", deal
+    # Replaying the original command after a later state transition must
+    # recover that iteration rather than create a third one.
+    late_retry_code, _, late_retry_deal = request(f"/orders/{order_id}/deal/submit", {"result": "первая итерация", "idempotency_key": "submit-order1-iteration1"}, cookie=executor, method="POST")
+    assert late_retry_code == 200 and len(late_retry_deal["submissions"]) == 1 and late_retry_deal["status"] == "revision_requested", (late_retry_code, late_retry_deal)
+    mismatch_code, _, mismatch_body = request(f"/orders/{order_id}/deal/submit", {"result": "другое содержимое", "idempotency_key": "submit-order1-iteration1"}, cookie=executor, method="POST")
+    assert mismatch_code == 409 and "different" in mismatch_body["error"], (mismatch_code, mismatch_body)
+    assert request(f"/orders/{order_id}", cookie=customer)[2]["status"] == "in_progress"
+    code, _, deal = request(f"/orders/{order_id}/deal/submit", {"result": "вторая итерация", "idempotency_key": "submit-order1-iteration2"}, cookie=executor, method="POST")
+    assert code == 200 and len(deal["submissions"]) == 2 and deal["version"] == 5, (code, deal)
+    code, _, deal = request(f"/orders/{order_id}/deal/accept", cookie=customer, method="POST")
+    assert code == 200 and deal["status"] == "completed" and deal["decided_at"], (code, deal)
+    assert request(f"/orders/{order_id}", cookie=customer)[2]["status"] == "completed"
+    # Completed is terminal for every side.
+    assert request(f"/orders/{order_id}/deal/submit", {"result": "x", "idempotency_key": "terminal-key"}, cookie=executor, method="POST")[0] == 409
+    assert request(f"/orders/{order_id}/deal/revision", {"reason": "x"}, cookie=customer, method="POST")[0] == 409
+
+    print("PASS: deal flow — selection without handshake, auto-withdrawal, revision, acceptance")
+
+    # --- Handshake: diverging terms wait for the executor.
+    order2 = new_order("Сделка с рукопожатием")
+    prop2 = propose(order2, executor)
+    code, _, deal = request(f"/orders/{order2}/proposals/{prop2['id']}/select",
+                            {"amount": "90000", "currency": "RUB", "revisions_included": 1},
+                            cookie=customer, method="POST")
+    assert code == 201 and deal["status"] == "terms_pending", (code, deal)
+    assert deal["terms"]["revisions_included"] == 1 and deal["started_at"] is None, deal
+    # The order is still published while the executor decides, but the
+    # customer cannot close it after selecting an executor.
+    assert request(f"/orders/{order2}")[0] == 200, "terms_pending order must stay public"
+    code, _, body = request(f"/orders/{order2}/close", cookie=customer, method="POST")
+    assert code == 409 and "selected executor" in body["error"], (code, body)
+    assert request(f"/orders/{order2}")[2]["status"] == "published"
+    # The customer cannot confirm for the executor; a stranger sees nothing.
+    assert request(f"/orders/{order2}/deal/confirm", cookie=customer, method="POST")[0] == 404
+    assert request(f"/orders/{order2}/deal/confirm", cookie=stranger, method="POST")[0] == 404
+    # The executor cannot submit before the handshake completes.
+    assert request(f"/orders/{order2}/deal/submit", {"result": "x", "idempotency_key": "pending-key"}, cookie=executor, method="POST")[0] == 409
+    code, _, deal = request(f"/orders/{order2}/deal/confirm", cookie=executor, method="POST")
+    assert code == 200 and deal["status"] == "in_progress" and deal["started_at"], (code, deal)
+    assert request(f"/orders/{order2}", cookie=customer)[2]["status"] == "in_progress"
+    # The revision budget of the terms bounds the requests.
+    assert request(f"/orders/{order2}/deal/submit", {"result": "v1", "idempotency_key": "submit-order2-iteration1"}, cookie=executor, method="POST")[0] == 200
+    assert request(f"/orders/{order2}/deal/revision", {"reason": "раз"}, cookie=customer, method="POST")[0] == 200
+    assert request(f"/orders/{order2}/deal/submit", {"result": "v2", "idempotency_key": "submit-order2-iteration2"}, cookie=executor, method="POST")[0] == 200
+    code, _, body = request(f"/orders/{order2}/deal/revision", {"reason": "два"}, cookie=customer, method="POST")
+    assert code == 409 and "revision budget" in body["error"], (code, body)
+    # Acceptance stays possible with the budget exhausted.
+    assert request(f"/orders/{order2}/deal/accept", cookie=customer, method="POST")[0] == 200
+
+    print("PASS: deal handshake — diverging terms, confirmation, revision budget")
+
+    # --- Declined handshake restores the funnel atomically.
+    order3 = new_order("Сделка с отказом")
+    prop3 = propose(order3, executor)
+    other_prop3 = propose(order3, other, amount="70000")
+    code, _, deal = request(f"/orders/{order3}/proposals/{prop3['id']}/select",
+                            {"amount": "60000", "currency": "RUB"}, cookie=customer, method="POST")
+    assert code == 201 and deal["status"] == "terms_pending", (code, deal)
+    code, _, deal = request(f"/orders/{order3}/deal/decline",
+                            {"reason": "условия не подходят"}, cookie=executor, method="POST")
+    assert code == 200 and deal["status"] == "declined", (code, deal)
+    # The order is published again; both proposals are active; the deal is gone.
+    assert request(f"/orders/{order3}", cookie=customer)[2]["status"] == "published"
+    code, _, props = request(f"/orders/{order3}/proposals", cookie=customer)
+    statuses = {p["id"]: p["status"] for p in props["proposals"]}
+    assert statuses[prop3["id"]] == "active" and statuses[other_prop3["id"]] == "active", statuses
+    assert request(f"/orders/{order3}/deal", cookie=customer)[0] == 404
+    # A new selection is possible after the declined handshake.
+    code, _, deal = request(f"/orders/{order3}/proposals/{other_prop3['id']}/select",
+                            {}, cookie=customer, method="POST")
+    assert code == 201 and deal["status"] == "in_progress", (code, deal)
+    # Cancellation before the first delivery, with a mandatory reason.
+    assert request(f"/orders/{order3}/deal/cancel", {}, cookie=customer, method="POST")[0] == 400
+    code, _, deal = request(f"/orders/{order3}/deal/cancel",
+                            {"reason": "бюджет ушёл"}, cookie=customer, method="POST")
+    assert code == 200 and deal["status"] == "cancelled" and deal["reason"] == "бюджет ушёл", (code, deal)
+    assert deal["submissions"] == [] and deal["decided_at"], deal
+    assert request(f"/orders/{order3}", cookie=customer)[2]["status"] == "cancelled"
+    # The executor sees the cancel reason too; a stranger sees nothing.
+    code, _, mine = request(f"/orders/{order3}/deal", cookie=other)
+    assert code == 200 and mine["reason"] == "бюджет ушёл", (code, mine)
+    assert request(f"/orders/{order3}/deal", cookie=stranger)[0] == 404
+
+    print("PASS: deal decline/cancel — funnel restored, mandatory reason, both parties see it")
+
+
 def catalog_flow():
     """The public catalog: anonymous listing, filters, keyset pagination."""
     # Publish three vacancies with distinct attributes to filter by. The
@@ -640,6 +813,7 @@ def main():
     response_flow()
     hiring_flow()
     order_flow()
+    deal_flow()
     catalog_flow()
 
     print("PASS: readiness, registration, stable identity, cookie, duplicate, login, invalid credentials, validation, public profile, own sessions, refresh, logout")
