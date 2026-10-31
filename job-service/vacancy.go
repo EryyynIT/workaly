@@ -231,9 +231,9 @@ func (s *jobService) UpdateVacancy(_ context.Context, req *jobpb.UpdateVacancyRe
 // classify the current row, then flip the status in one guarded UPDATE.
 // alreadyMsg reports from == to (e.g. double publish); wrongStateMsg covers
 // any other current status (e.g. closing a draft).
-func (s *jobService) transition(vacancyID, actor, from, to, alreadyMsg, wrongStateMsg string) (*jobpb.Vacancy, error) {
+func (s *jobService) transition(ctx context.Context, vacancyID, actor, from, to, alreadyMsg, wrongStateMsg string) (*jobpb.Vacancy, error) {
 	var currentAuthor, currentStatus string
-	err := s.db.QueryRow(`SELECT author_user_id, status FROM vacancies WHERE id = $1`, vacancyID).
+	err := s.db.QueryRowContext(ctx, `SELECT author_user_id, status FROM vacancies WHERE id = $1`, vacancyID).
 		Scan(&currentAuthor, &currentStatus)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, notFound()
@@ -252,7 +252,7 @@ func (s *jobService) transition(vacancyID, actor, from, to, alreadyMsg, wrongSta
 	default:
 		return nil, precondition("%s", wrongStateMsg)
 	}
-	row := s.db.QueryRow(`UPDATE vacancies SET
+	row := s.db.QueryRowContext(ctx, `UPDATE vacancies SET
 			status = $3,
 			published_at = CASE WHEN $3 = 'published' THEN CURRENT_TIMESTAMP ELSE published_at END,
 			closed_at = CASE WHEN $3 = 'closed' THEN CURRENT_TIMESTAMP ELSE closed_at END
@@ -269,26 +269,71 @@ func (s *jobService) transition(vacancyID, actor, from, to, alreadyMsg, wrongSta
 	return v, nil
 }
 
-func (s *jobService) PublishVacancy(_ context.Context, req *jobpb.PublishVacancyRequest) (*jobpb.Vacancy, error) {
+func (s *jobService) PublishVacancy(ctx context.Context, req *jobpb.PublishVacancyRequest) (*jobpb.Vacancy, error) {
 	if err := requireActor(req.ActorUserId); err != nil {
 		return nil, err
 	}
 	if !validUUID(req.VacancyId) {
 		return nil, invalid("vacancy_id must be a UUID")
 	}
-	return s.transition(req.VacancyId, req.ActorUserId, "draft", "published",
+	return s.transition(ctx, req.VacancyId, req.ActorUserId, "draft", "published",
 		"vacancy is already published", "closed vacancy cannot be published")
 }
 
-func (s *jobService) CloseVacancy(_ context.Context, req *jobpb.CloseVacancyRequest) (*jobpb.Vacancy, error) {
+func (s *jobService) CloseVacancy(ctx context.Context, req *jobpb.CloseVacancyRequest) (*jobpb.Vacancy, error) {
 	if err := requireActor(req.ActorUserId); err != nil {
 		return nil, err
 	}
 	if !validUUID(req.VacancyId) {
 		return nil, invalid("vacancy_id must be a UUID")
 	}
-	return s.transition(req.VacancyId, req.ActorUserId, "published", "closed",
-		"vacancy is already closed", "draft must be published before it can be closed")
+	// Closing is transactional with the hiring pipeline (S3 decision 1): an
+	// outstanding offer must never survive its vacancy. Active responses stay
+	// active as history; withdrawn and terminal records are untouched.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, mapDBError(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var currentAuthor, currentStatus string
+	err = tx.QueryRowContext(ctx, `SELECT author_user_id, status FROM vacancies WHERE id = $1 FOR UPDATE`, req.VacancyId).
+		Scan(&currentAuthor, &currentStatus)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, notFound()
+	}
+	if err != nil {
+		return nil, mapDBError(err)
+	}
+	if currentAuthor != req.ActorUserId {
+		return nil, notFound()
+	}
+	switch currentStatus {
+	case "closed":
+		return nil, precondition("vacancy is already closed")
+	case "published":
+		// proceed below
+	default:
+		return nil, precondition("draft must be published before it can be closed")
+	}
+	row := tx.QueryRowContext(ctx, `UPDATE vacancies SET status = 'closed', closed_at = CURRENT_TIMESTAMP
+		WHERE id = $1 AND author_user_id = $2 AND status = 'published'
+		RETURNING `+vacancyColumns, req.VacancyId, req.ActorUserId)
+	v, err := scanVacancy(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, precondition("vacancy changed concurrently; reload and retry")
+	}
+	if err != nil {
+		return nil, mapDBError(err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE vacancy_responses
+		SET status = 'rejected', decided_at = CURRENT_TIMESTAMP, reason = 'vacancy_closed'
+		WHERE vacancy_id = $1 AND status IN ('offer_sent', 'offer_accepted')`, req.VacancyId); err != nil {
+		return nil, mapDBError(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, mapDBError(err)
+	}
+	return v, nil
 }
 
 func (s *jobService) ListMyVacancies(_ context.Context, req *jobpb.ListMyVacanciesRequest) (*jobpb.ListMyVacanciesResponse, error) {

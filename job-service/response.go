@@ -26,23 +26,38 @@ func validateResponse(coverLetter, contact string) error {
 	return nil
 }
 
+const maxReasonLen = 1000
+
+// validateReason mirrors vacancy_responses_reason_len; empty is allowed on
+// every decision that carries a reason.
+func validateReason(reason string) error {
+	if runes := utf8.RuneCountInString(reason); runes > maxReasonLen {
+		return invalid("reason must contain at most 1000 characters")
+	}
+	return nil
+}
+
 const responseColumns = `id, vacancy_id, candidate_user_id, cover_letter,
-	contact, status, created_at, withdrawn_at`
+	contact, status, created_at, withdrawn_at, decided_at, reason`
 
 func scanResponse(row rowScanner) (*jobpb.VacancyResponse, error) {
 	var r jobpb.VacancyResponse
-	var contact sql.NullString
+	var contact, reason sql.NullString
 	var createdAt time.Time
-	var withdrawnAt sql.NullTime
+	var withdrawnAt, decidedAt sql.NullTime
 	err := row.Scan(&r.Id, &r.VacancyId, &r.CandidateUserId, &r.CoverLetter,
-		&contact, &r.Status, &createdAt, &withdrawnAt)
+		&contact, &r.Status, &createdAt, &withdrawnAt, &decidedAt, &reason)
 	if err != nil {
 		return nil, err
 	}
 	r.Contact = contact.String
+	r.Reason = reason.String
 	r.CreatedAt = timestamppb.New(createdAt)
 	if withdrawnAt.Valid {
 		r.WithdrawnAt = timestamppb.New(withdrawnAt.Time)
+	}
+	if decidedAt.Valid {
+		r.DecidedAt = timestamppb.New(decidedAt.Time)
 	}
 	return &r, nil
 }
@@ -188,34 +203,48 @@ func (s *jobService) WithdrawVacancyResponse(ctx context.Context, req *jobpb.Wit
 	if !validUUID(req.VacancyId) || !validUUID(req.ResponseId) {
 		return nil, invalid("vacancy_id and response_id must be UUIDs")
 	}
-	var candidate string
-	var status_ string
-	err := s.db.QueryRowContext(ctx, `SELECT candidate_user_id, status FROM vacancy_responses
-		WHERE id = $1 AND vacancy_id = $2`, req.ResponseId, req.VacancyId).Scan(&candidate, &status_)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, notFound()
-	}
-	if err != nil {
-		return nil, mapDBError(err)
-	}
-	if candidate != req.ActorUserId {
-		return nil, notFound()
-	}
-	if status_ == "withdrawn" {
-		return nil, precondition("response is already withdrawn")
-	}
+	// Withdrawal is possible from any non-final status: terminal records
+	// (rejected, offer_declined, withdrawn, hired) stay untouched as history
+	// (docs/s3-hiring.md, decision 1).
 	row := s.db.QueryRowContext(ctx, `UPDATE vacancy_responses
 		SET status = 'withdrawn', withdrawn_at = CURRENT_TIMESTAMP
-		WHERE id = $1 AND vacancy_id = $2 AND candidate_user_id = $3 AND status = 'active'
+		WHERE id = $1 AND vacancy_id = $2 AND candidate_user_id = $3
+			AND status IN ('active', 'offer_sent', 'offer_accepted')
 		RETURNING `+responseColumns, req.ResponseId, req.VacancyId, req.ActorUserId)
 	r, err := scanResponse(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, precondition("response changed concurrently; reload and retry")
+		// Not owned, not found, or in a state without a withdrawal path
+		// (already withdrawn, hired). The candidate sees their own record, so
+		// a state conflict is reported as such; anything else stays hidden.
+		return nil, s.classifyOwnResponse(ctx, req.ResponseId, req.VacancyId, req.ActorUserId)
 	}
 	if err != nil {
 		return nil, mapDBError(err)
 	}
 	return r, nil
+}
+
+// classifyOwnResponse distinguishes "no such response of mine" (404) from
+// "my response is in a state that forbids the transition" (409). It runs
+// only after a guarded UPDATE matched nothing, so a concurrent change is
+// still reported as a state conflict.
+func (s *jobService) classifyOwnResponse(ctx context.Context, responseID, vacancyID, actor string) error {
+	var candidate, status_ string
+	err := s.db.QueryRowContext(ctx, `SELECT candidate_user_id, status FROM vacancy_responses
+		WHERE id = $1 AND vacancy_id = $2`, responseID, vacancyID).Scan(&candidate, &status_)
+	if errors.Is(err, sql.ErrNoRows) {
+		return notFound()
+	}
+	if err != nil {
+		return mapDBError(err)
+	}
+	if candidate != actor {
+		return notFound()
+	}
+	if status_ == "withdrawn" {
+		return precondition("response is already withdrawn")
+	}
+	return precondition("response is %s and cannot be withdrawn", status_)
 }
 
 func (s *jobService) GetMyVacancyResponse(ctx context.Context, req *jobpb.GetMyVacancyResponseRequest) (*jobpb.VacancyResponse, error) {
@@ -225,8 +254,10 @@ func (s *jobService) GetMyVacancyResponse(ctx context.Context, req *jobpb.GetMyV
 	if !validUUID(req.VacancyId) {
 		return nil, invalid("vacancy_id must be a UUID")
 	}
+	// The candidate's current pipeline state: every status except withdrawn.
 	row := s.db.QueryRowContext(ctx, `SELECT `+responseColumns+` FROM vacancy_responses
-		WHERE vacancy_id = $1 AND candidate_user_id = $2 AND status = 'active'`,
+		WHERE vacancy_id = $1 AND candidate_user_id = $2 AND status != 'withdrawn'
+		ORDER BY created_at DESC LIMIT 1`,
 		req.VacancyId, req.ActorUserId)
 	r, err := scanResponse(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -236,4 +267,152 @@ func (s *jobService) GetMyVacancyResponse(ctx context.Context, req *jobpb.GetMyV
 		return nil, mapDBError(err)
 	}
 	return r, nil
+}
+
+// hiringTransition is the shared CAS body of the offer pipeline. Side is
+// "author" or "candidate": the actor must be the vacancy author or the
+// responding candidate respectively; a stranger gets the same 404 as a
+// missing response. The UPDATE is guarded by the expected from-status, so a
+// lost race is a 409, never a silent overwrite. Transitions out of "active"
+// additionally require the vacancy to be published: a closed vacancy stops
+// its pipeline, so an outstanding offer can never be created on it. reason
+// and decided_at are set only when the transition carries them.
+func (s *jobService) hiringTransition(ctx context.Context, responseID, vacancyID, actor, side, from, to, reason string) (*jobpb.VacancyResponse, error) {
+	var sideClause, sideArg string
+	if side == "author" {
+		sideClause = `vacancy_id IN (SELECT id FROM vacancies WHERE id = $2 AND author_user_id = $3)`
+		sideArg = actor
+	} else {
+		sideClause = `candidate_user_id = $3`
+		sideArg = actor
+	}
+	if from == "active" {
+		sideClause += ` AND vacancy_id IN (SELECT id FROM vacancies WHERE id = $2 AND status = 'published')`
+	}
+	row := s.db.QueryRowContext(ctx, `UPDATE vacancy_responses
+		SET status = $4,
+			decided_at = CASE WHEN $4 IN ('rejected', 'offer_declined', 'hired') THEN CURRENT_TIMESTAMP ELSE decided_at END,
+			reason = CASE WHEN $5 <> '' THEN $5 ELSE reason END
+		WHERE id = $1 AND vacancy_id = $2 AND status = $6 AND `+sideClause+`
+		RETURNING `+responseColumns,
+		responseID, vacancyID, sideArg, to, reason, from)
+	r, err := scanResponse(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, s.classifyTransition(ctx, responseID, vacancyID, actor, side, from, to, from == "active")
+	}
+	if err != nil {
+		if isDuplicateKey(err, "vacancy_responses_one_offer") {
+			return nil, status.Error(codes.AlreadyExists, "another response already holds an outstanding offer for this vacancy")
+		}
+		return nil, mapDBError(err)
+	}
+	return r, nil
+}
+
+// classifyTransition mirrors classifyOwnResponse for both sides and reports
+// a precise conflict when the record is in the target state already (a
+// retried command) or any other state (a lost race). When the transition
+// required a published vacancy and the vacancy is closed, the conflict says
+// so instead of exposing the record state.
+func (s *jobService) classifyTransition(ctx context.Context, responseID, vacancyID, actor, side, from, to string, requiresPublished bool) error {
+	var currentAuthor, currentCandidate, currentStatus, vacancyStatus string
+	err := s.db.QueryRowContext(ctx, `SELECT v.author_user_id, r.candidate_user_id, r.status, v.status
+		FROM vacancy_responses r JOIN vacancies v ON v.id = r.vacancy_id
+		WHERE r.id = $1 AND r.vacancy_id = $2`, responseID, vacancyID).
+		Scan(&currentAuthor, &currentCandidate, &currentStatus, &vacancyStatus)
+	if errors.Is(err, sql.ErrNoRows) {
+		return notFound()
+	}
+	if err != nil {
+		return mapDBError(err)
+	}
+	if (side == "author" && currentAuthor != actor) || (side == "candidate" && currentCandidate != actor) {
+		return notFound()
+	}
+	if requiresPublished && vacancyStatus != "published" {
+		return precondition("the vacancy is %s; the hiring pipeline stopped", vacancyStatus)
+	}
+	if currentStatus == to {
+		return precondition("response is already %s", to)
+	}
+	return precondition("response is %s; this transition requires %s", currentStatus, from)
+}
+
+func requireResponseIDs(vacancyID, responseID string) error {
+	if !validUUID(vacancyID) || !validUUID(responseID) {
+		return invalid("vacancy_id and response_id must be UUIDs")
+	}
+	return nil
+}
+
+func (s *jobService) RejectVacancyResponse(ctx context.Context, req *jobpb.RejectVacancyResponseRequest) (*jobpb.VacancyResponse, error) {
+	if err := requireActor(req.ActorUserId); err != nil {
+		return nil, err
+	}
+	if err := requireResponseIDs(req.VacancyId, req.ResponseId); err != nil {
+		return nil, err
+	}
+	if err := validateReason(req.Reason); err != nil {
+		return nil, err
+	}
+	return s.hiringTransition(ctx, req.ResponseId, req.VacancyId, req.ActorUserId,
+		"author", "active", "rejected", req.Reason)
+}
+
+func (s *jobService) SendOffer(ctx context.Context, req *jobpb.SendOfferRequest) (*jobpb.VacancyResponse, error) {
+	if err := requireActor(req.ActorUserId); err != nil {
+		return nil, err
+	}
+	if err := requireResponseIDs(req.VacancyId, req.ResponseId); err != nil {
+		return nil, err
+	}
+	return s.hiringTransition(ctx, req.ResponseId, req.VacancyId, req.ActorUserId,
+		"author", "active", "offer_sent", "")
+}
+
+func (s *jobService) WithdrawOffer(ctx context.Context, req *jobpb.WithdrawOfferRequest) (*jobpb.VacancyResponse, error) {
+	if err := requireActor(req.ActorUserId); err != nil {
+		return nil, err
+	}
+	if err := requireResponseIDs(req.VacancyId, req.ResponseId); err != nil {
+		return nil, err
+	}
+	return s.hiringTransition(ctx, req.ResponseId, req.VacancyId, req.ActorUserId,
+		"author", "offer_sent", "active", "")
+}
+
+func (s *jobService) AcceptOffer(ctx context.Context, req *jobpb.AcceptOfferRequest) (*jobpb.VacancyResponse, error) {
+	if err := requireActor(req.ActorUserId); err != nil {
+		return nil, err
+	}
+	if err := requireResponseIDs(req.VacancyId, req.ResponseId); err != nil {
+		return nil, err
+	}
+	return s.hiringTransition(ctx, req.ResponseId, req.VacancyId, req.ActorUserId,
+		"candidate", "offer_sent", "offer_accepted", "")
+}
+
+func (s *jobService) DeclineOffer(ctx context.Context, req *jobpb.DeclineOfferRequest) (*jobpb.VacancyResponse, error) {
+	if err := requireActor(req.ActorUserId); err != nil {
+		return nil, err
+	}
+	if err := requireResponseIDs(req.VacancyId, req.ResponseId); err != nil {
+		return nil, err
+	}
+	if err := validateReason(req.Reason); err != nil {
+		return nil, err
+	}
+	return s.hiringTransition(ctx, req.ResponseId, req.VacancyId, req.ActorUserId,
+		"candidate", "offer_sent", "offer_declined", req.Reason)
+}
+
+func (s *jobService) MarkHired(ctx context.Context, req *jobpb.MarkHiredRequest) (*jobpb.VacancyResponse, error) {
+	if err := requireActor(req.ActorUserId); err != nil {
+		return nil, err
+	}
+	if err := requireResponseIDs(req.VacancyId, req.ResponseId); err != nil {
+		return nil, err
+	}
+	return s.hiringTransition(ctx, req.ResponseId, req.VacancyId, req.ActorUserId,
+		"author", "offer_accepted", "hired", "")
 }

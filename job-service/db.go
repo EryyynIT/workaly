@@ -43,4 +43,20 @@ var migrations = []string{
 	`CREATE UNIQUE INDEX IF NOT EXISTS vacancy_responses_one_active ON vacancy_responses (vacancy_id, candidate_user_id) WHERE status = 'active'`,
 	`CREATE INDEX IF NOT EXISTS vacancy_responses_vacancy ON vacancy_responses (vacancy_id, created_at DESC)`,
 	`CREATE INDEX IF NOT EXISTS vacancy_responses_candidate ON vacancy_responses (candidate_user_id, created_at DESC)`,
+	// S3 hiring pipeline (docs/s3-hiring.md, decision 1). Appended only; the
+	// original CHECK is superseded in place, existing rows stay valid.
+	`ALTER TABLE vacancy_responses DROP CONSTRAINT IF EXISTS vacancy_responses_status`,
+	`ALTER TABLE vacancy_responses ADD CONSTRAINT vacancy_responses_status CHECK (status IN ('active', 'withdrawn', 'rejected', 'offer_sent', 'offer_accepted', 'offer_declined', 'hired'))`,
+	`ALTER TABLE vacancy_responses ADD COLUMN IF NOT EXISTS decided_at TIMESTAMP WITH TIME ZONE`,
+	`ALTER TABLE vacancy_responses ADD COLUMN IF NOT EXISTS reason TEXT`,
+	`ALTER TABLE vacancy_responses DROP CONSTRAINT IF EXISTS vacancy_responses_reason_len`,
+	`ALTER TABLE vacancy_responses ADD CONSTRAINT vacancy_responses_reason_len CHECK (reason IS NULL OR char_length(reason) <= 1000)`,
+	`ALTER TABLE vacancy_responses DROP CONSTRAINT IF EXISTS vacancy_responses_state`,
+	`ALTER TABLE vacancy_responses ADD CONSTRAINT vacancy_responses_state CHECK (
+		(status = 'withdrawn' AND withdrawn_at IS NOT NULL)
+		OR (status != 'withdrawn' AND withdrawn_at IS NULL)
+	)`,
+	// At most one outstanding offer per vacancy; a concurrent second send is
+	// a unique violation reported as AlreadyExists.
+	`CREATE UNIQUE INDEX IF NOT EXISTS vacancy_responses_one_offer ON vacancy_responses (vacancy_id) WHERE status IN ('offer_sent', 'offer_accepted')`,
 }
