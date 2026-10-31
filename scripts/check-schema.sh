@@ -61,6 +61,18 @@ must_reject "vacancy_responses_one_active" "${J[@]}" -c "INSERT INTO vacancy_res
 must_succeed "${J[@]}" -c "UPDATE vacancy_responses SET status = 'withdrawn', withdrawn_at = now() WHERE candidate_user_id = '$RESPONDER' AND status = 'active'"
 must_succeed "${J[@]}" -c "INSERT INTO vacancy_responses (vacancy_id, candidate_user_id, cover_letter) VALUES ('$VID', '$RESPONDER', 'probe after withdraw')"
 
+# S3 hiring pipeline: the widened status enum and the one-offer index.
+must_succeed "${J[@]}" -c "UPDATE vacancy_responses SET status = 'offer_sent' WHERE vacancy_id = '$VID' AND status = 'active'"
+must_reject "vacancy_responses_one_offer" "${J[@]}" -c "INSERT INTO vacancy_responses (vacancy_id, candidate_user_id, cover_letter, status) VALUES ('$VID', '$AUTHOR', 'other offer', 'offer_sent')"
+must_succeed "${J[@]}" -c "UPDATE vacancy_responses SET status = 'offer_accepted' WHERE vacancy_id = '$VID' AND status = 'offer_sent'"
+must_succeed "${J[@]}" -c "UPDATE vacancy_responses SET status = 'hired', decided_at = now() WHERE vacancy_id = '$VID' AND status = 'offer_accepted'"
+# The hired offer frees the one-offer slot: a new outstanding offer is legal.
+must_succeed "${J[@]}" -c "INSERT INTO vacancy_responses (vacancy_id, candidate_user_id, cover_letter, status) VALUES ('$VID', '$AUTHOR', 'author joins the probe', 'offer_sent')"
+must_reject "vacancy_responses_reason_len" "${J[@]}" -c "UPDATE vacancy_responses SET reason = repeat('x', 1001) WHERE vacancy_id = '$VID' AND status = 'offer_sent'"
+# A rejected row carrying withdrawn_at violates the state consistency rule.
+must_reject "vacancy_responses_state" "${J[@]}" -c "UPDATE vacancy_responses SET status = 'rejected', withdrawn_at = now() WHERE vacancy_id = '$VID' AND status = 'offer_sent'"
+must_reject "vacancy_responses_status" "${J[@]}" -c "UPDATE vacancy_responses SET status = 'teleported' WHERE vacancy_id = '$VID' AND status = 'offer_sent'"
+
 # task-db: orders.
 must_succeed "${T[@]}" -c "INSERT INTO orders (author_user_id, title, description, budget_type, budget_amount, currency) VALUES ('$AUTHOR', '__schema_probe__', 'probe', 'fixed', 500, 'RUB')"
 must_reject "orders_title_len" "${T[@]}" -c "INSERT INTO orders (author_user_id, title, description, budget_type, budget_amount, currency) VALUES ('$AUTHOR', repeat('x', 121), 'probe', 'fixed', 100, 'RUB')"

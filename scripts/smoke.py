@@ -231,6 +231,134 @@ def response_flow():
     print("PASS: vacancy response flow — email gate, contact to author only, one active response, withdraw, respond again")
 
 
+def hiring_flow():
+    """The S3 hiring pipeline: reject, offer cycle, hired, close cascade."""
+    author_email, author, _ = register_account("smoke-hire-author")
+    code, _, draft = request("/vacancies", vacancy_fields("Вакансия с наймом"), cookie=author)
+    assert code == 201, (code, draft)
+    vacancy_id = draft["id"]
+    assert request("/verify-email", {"token": dev_verify_token(author_email)})[0] == 200
+    assert request(f"/vacancies/{vacancy_id}/publish", cookie=author, method="POST")[0] == 200
+
+    candidate_email, candidate, _ = register_account("smoke-hire-candidate")
+    assert request("/verify-email", {"token": dev_verify_token(candidate_email)})[0] == 200
+    other_email, other, _ = register_account("smoke-hire-other")
+    assert request("/verify-email", {"token": dev_verify_token(other_email)})[0] == 200
+    _, stranger, _ = register_account("smoke-hire-stranger")
+
+    reply = {"cover_letter": "Готов пройти все этапы.", "contact": "@hire-me"}
+    code, _, resp = request(f"/vacancies/{vacancy_id}/responses", reply, cookie=candidate)
+    assert code == 201, (code, resp)
+    rid = resp["id"]
+
+    # The author cannot send an offer before reading: a stranger gets 404.
+    assert request(f"/vacancies/{vacancy_id}/responses/{rid}/offer", cookie=stranger, method="POST")[0] == 404
+    # The candidate cannot steer the author's side.
+    assert request(f"/vacancies/{vacancy_id}/responses/{rid}/offer", cookie=candidate, method="POST")[0] == 404
+    assert request(f"/vacancies/{vacancy_id}/responses/{rid}/reject", {}, cookie=candidate, method="POST")[0] == 404
+
+    # Offer -> decline with a reason; the author sees it, the candidate sees it too.
+    code, _, body = request(f"/vacancies/{vacancy_id}/responses/{rid}/offer", cookie=author, method="POST")
+    assert code == 200 and body["status"] == "offer_sent", (code, body)
+    code, _, mine = request(f"/vacancies/{vacancy_id}/responses/mine", cookie=candidate)
+    assert code == 200 and mine["status"] == "offer_sent", (code, mine)
+    code, _, body = request(f"/vacancies/{vacancy_id}/responses/{rid}/offer", cookie=author, method="POST")
+    assert code == 409 and "already offer_sent" in body["error"], (code, body)
+    code, _, body = request(f"/vacancies/{vacancy_id}/responses/{rid}/offer/decline",
+                            {"reason": "низкая ставка"}, cookie=candidate, method="POST")
+    assert code == 200 and body["status"] == "offer_declined" and body["reason"] == "низкая ставка", (code, body)
+    assert body["decided_at"], body
+    code, _, body = request(f"/vacancies/{vacancy_id}/responses", cookie=author)
+    assert code == 200 and body["responses"][0]["status"] == "offer_declined", (code, body)
+    assert body["responses"][0]["reason"] == "низкая ставка", body
+
+    # A declined offer frees the slot but not the response: re-offer is a
+    # conflict, the response is terminal, and withdrawal from a terminal
+    # state is a conflict too (history stays untouched).
+    code, _, body = request(f"/vacancies/{vacancy_id}/responses/{rid}/offer", cookie=author, method="POST")
+    assert code == 409 and "requires active" in body["error"], (code, body)
+    code, _, body = request(f"/vacancies/{vacancy_id}/responses/{rid}/withdraw", cookie=candidate, method="POST")
+    assert code == 409 and "cannot be withdrawn" in body["error"], (code, body)
+
+    # Fresh response -> offer -> withdraw offer -> reject with a reason.
+    code, _, resp = request(f"/vacancies/{vacancy_id}/responses", reply, cookie=candidate)
+    assert code == 201, (code, resp)
+    rid = resp["id"]
+    assert request(f"/vacancies/{vacancy_id}/responses/{rid}/offer", cookie=author, method="POST")[0] == 200
+    code, _, body = request(f"/vacancies/{vacancy_id}/responses/{rid}/offer/withdraw", cookie=author, method="POST")
+    assert code == 200 and body["status"] == "active", (code, body)
+    code, _, body = request(f"/vacancies/{vacancy_id}/responses/{rid}/reject",
+                            {"reason": "профиль не совпал"}, cookie=author, method="POST")
+    assert code == 200 and body["status"] == "rejected", (code, body)
+    assert "reason" not in body, body  # the author's view never echoes their own reject reason
+    code, _, mine = request(f"/vacancies/{vacancy_id}/responses/mine", cookie=candidate)
+    assert code == 200 and mine["status"] == "rejected" and mine["reason"] == "профиль не совпал", (code, mine)
+    # Rejected is terminal: no offer, no re-reject.
+    assert request(f"/vacancies/{vacancy_id}/responses/{rid}/offer", cookie=author, method="POST")[0] == 409
+    assert request(f"/vacancies/{vacancy_id}/responses/{rid}/reject", {}, cookie=author, method="POST")[0] == 409
+
+    # Full cycle to hired: offer -> accept -> hired; hired is terminal.
+    code, _, resp = request(f"/vacancies/{vacancy_id}/responses", reply, cookie=other)
+    assert code == 201, (code, resp)
+    other_rid = resp["id"]
+    assert request(f"/vacancies/{vacancy_id}/responses/{other_rid}/offer", cookie=author, method="POST")[0] == 200
+    code, _, body = request(f"/vacancies/{vacancy_id}/responses/{other_rid}/offer/accept", cookie=other, method="POST")
+    assert code == 200 and body["status"] == "offer_accepted", (code, body)
+    code, _, body = request(f"/vacancies/{vacancy_id}/responses/{other_rid}/hired", cookie=author, method="POST")
+    assert code == 200 and body["status"] == "hired" and body["decided_at"], (code, body)
+    # Hired is terminal for every side: no withdraw, no reject, no re-hire.
+    assert request(f"/vacancies/{vacancy_id}/responses/{other_rid}/withdraw", cookie=other, method="POST")[0] == 409
+    assert request(f"/vacancies/{vacancy_id}/responses/{other_rid}/reject", {}, cookie=author, method="POST")[0] == 409
+    assert request(f"/vacancies/{vacancy_id}/responses/{other_rid}/hired", cookie=author, method="POST")[0] == 409
+
+    print("PASS: hiring flow — 404s, offer/decline reasons, withdraw-offer, reject, hired terminal")
+
+    # Closing a vacancy force-rejects the outstanding offer atomically.
+    author2_email, author2, _ = register_account("smoke-hire-author2")
+    code, _, draft2 = request("/vacancies", vacancy_fields("Вакансия с каскадом"), cookie=author2)
+    assert code == 201, (code, draft2)
+    vacancy2_id = draft2["id"]
+    assert request("/verify-email", {"token": dev_verify_token(author2_email)})[0] == 200
+    assert request(f"/vacancies/{vacancy2_id}/publish", cookie=author2, method="POST")[0] == 200
+    cand2_email, cand2, _ = register_account("smoke-hire-cand2")
+    assert request("/verify-email", {"token": dev_verify_token(cand2_email)})[0] == 200
+    code, _, resp = request(f"/vacancies/{vacancy2_id}/responses", reply, cookie=cand2)
+    assert code == 201, (code, resp)
+    rid2 = resp["id"]
+    assert request(f"/vacancies/{vacancy2_id}/responses/{rid2}/offer", cookie=author2, method="POST")[0] == 200
+    code, _, body = request(f"/vacancies/{vacancy2_id}/close", cookie=author2, method="POST")
+    assert code == 200 and body["status"] == "closed", (code, body)
+    code, _, mine = request(f"/vacancies/{vacancy2_id}/responses/mine", cookie=cand2)
+    assert code == 200 and mine["status"] == "rejected" and mine["reason"] == "vacancy_closed", (code, mine)
+
+    print("PASS: hiring cascade — closing a vacancy force-rejects the outstanding offer")
+
+    # A closed vacancy stops the pipeline: an active response left as history
+    # accepts neither an offer nor a reject (409, never a silent transition).
+    author3_email, author3, _ = register_account("smoke-hire-author3")
+    code, _, draft3 = request("/vacancies", vacancy_fields("Вакансия с активным хвостом"), cookie=author3)
+    assert code == 201, (code, draft3)
+    vacancy3_id = draft3["id"]
+    assert request("/verify-email", {"token": dev_verify_token(author3_email)})[0] == 200
+    assert request(f"/vacancies/{vacancy3_id}/publish", cookie=author3, method="POST")[0] == 200
+    cand3_email, cand3, _ = register_account("smoke-hire-cand3")
+    assert request("/verify-email", {"token": dev_verify_token(cand3_email)})[0] == 200
+    code, _, resp = request(f"/vacancies/{vacancy3_id}/responses", reply, cookie=cand3)
+    assert code == 201, (code, resp)
+    rid3 = resp["id"]
+    assert request(f"/vacancies/{vacancy3_id}/close", cookie=author3, method="POST")[0] == 200
+    code, _, body = request(f"/vacancies/{vacancy3_id}/responses/{rid3}/offer", cookie=author3, method="POST")
+    assert code == 409 and "pipeline stopped" in body["error"], (code, body)
+    code, _, body = request(f"/vacancies/{vacancy3_id}/responses/{rid3}/reject", {}, cookie=author3, method="POST")
+    assert code == 409 and "pipeline stopped" in body["error"], (code, body)
+    # Withdrawal from active stays possible after the close: the candidate
+    # keeps control of their own record.
+    code, _, body = request(f"/vacancies/{vacancy3_id}/responses/{rid3}/withdraw", cookie=cand3, method="POST")
+    assert code == 200 and body["status"] == "withdrawn", (code, body)
+
+    print("PASS: hiring pipeline stops on a closed vacancy; withdrawal stays possible")
+
+
 def order_fields(title):
     return {
         "title": title,
@@ -510,6 +638,7 @@ def main():
 
     vacancy_flow()
     response_flow()
+    hiring_flow()
     order_flow()
     catalog_flow()
 
