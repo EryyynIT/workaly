@@ -30,6 +30,12 @@ const (
 	JobService_ListVacancyResponses_FullMethodName    = "/job.JobService/ListVacancyResponses"
 	JobService_WithdrawVacancyResponse_FullMethodName = "/job.JobService/WithdrawVacancyResponse"
 	JobService_GetMyVacancyResponse_FullMethodName    = "/job.JobService/GetMyVacancyResponse"
+	JobService_RejectVacancyResponse_FullMethodName   = "/job.JobService/RejectVacancyResponse"
+	JobService_SendOffer_FullMethodName               = "/job.JobService/SendOffer"
+	JobService_WithdrawOffer_FullMethodName           = "/job.JobService/WithdrawOffer"
+	JobService_AcceptOffer_FullMethodName             = "/job.JobService/AcceptOffer"
+	JobService_DeclineOffer_FullMethodName            = "/job.JobService/DeclineOffer"
+	JobService_MarkHired_FullMethodName               = "/job.JobService/MarkHired"
 	JobService_ListPublishedVacancies_FullMethodName  = "/job.JobService/ListPublishedVacancies"
 )
 
@@ -44,7 +50,11 @@ const (
 // anything not owned by the actor is reported as not found so existence is
 // never disclosed.
 //
-// State machine: draft -> published -> closed. Closed is terminal in S2.
+// State machine: draft -> published -> closed. Closing a vacancy is
+// transactional with its responses (S3): outstanding offers
+// (offer_sent/offer_accepted) are force-rejected with the system reason
+// "vacancy_closed" in the same transaction; active responses stay active as
+// history, withdrawn and terminal records are untouched.
 // `version` starts at 1 and is bumped by every successful mutation of the
 // vacancy itself; update calls must carry the version the caller saw, a
 // mismatch is reported as FailedPrecondition so the edge maps it to 409.
@@ -79,8 +89,26 @@ type JobServiceClient interface {
 	// response is allowed. Withdrawing a withdrawn response is reported as
 	// FailedPrecondition so the edge maps it to 409.
 	WithdrawVacancyResponse(ctx context.Context, in *WithdrawVacancyResponseRequest, opts ...grpc.CallOption) (*VacancyResponse, error)
-	// Reads the actor's own active response to a vacancy.
+	// Reads the actor's own non-withdrawn response to a vacancy, in any
+	// pipeline status (active, rejected, offer_sent, offer_accepted,
+	// offer_declined, hired).
 	GetMyVacancyResponse(ctx context.Context, in *GetMyVacancyResponseRequest, opts ...grpc.CallOption) (*VacancyResponse, error)
+	// Hiring pipeline of the response (S3, decision 1 of docs/s3-hiring.md).
+	// RejectVacancyResponse: author, active -> rejected; reason is optional and
+	// is visible to the candidate only. SendOffer: author, active ->
+	// offer_sent; at most one response per vacancy may hold an outstanding
+	// offer, a concurrent second offer is reported as AlreadyExists (409).
+	// WithdrawOffer: author, offer_sent -> active. AcceptOffer / DeclineOffer:
+	// candidate, offer_sent -> offer_accepted / offer_declined. MarkHired:
+	// author, offer_accepted -> hired (terminal; hiring needs no fake
+	// "acceptance of work"). Every transition is a CAS on the expected status:
+	// a lost race is reported as FailedPrecondition so the edge maps it to 409.
+	RejectVacancyResponse(ctx context.Context, in *RejectVacancyResponseRequest, opts ...grpc.CallOption) (*VacancyResponse, error)
+	SendOffer(ctx context.Context, in *SendOfferRequest, opts ...grpc.CallOption) (*VacancyResponse, error)
+	WithdrawOffer(ctx context.Context, in *WithdrawOfferRequest, opts ...grpc.CallOption) (*VacancyResponse, error)
+	AcceptOffer(ctx context.Context, in *AcceptOfferRequest, opts ...grpc.CallOption) (*VacancyResponse, error)
+	DeclineOffer(ctx context.Context, in *DeclineOfferRequest, opts ...grpc.CallOption) (*VacancyResponse, error)
+	MarkHired(ctx context.Context, in *MarkHiredRequest, opts ...grpc.CallOption) (*VacancyResponse, error)
 	// Public catalog: published vacancies only, newest first, keyset by
 	// (published_at, id). Anonymous callers get the same view as logged-in
 	// users; there is no actor in the request.
@@ -205,6 +233,66 @@ func (c *jobServiceClient) GetMyVacancyResponse(ctx context.Context, in *GetMyVa
 	return out, nil
 }
 
+func (c *jobServiceClient) RejectVacancyResponse(ctx context.Context, in *RejectVacancyResponseRequest, opts ...grpc.CallOption) (*VacancyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VacancyResponse)
+	err := c.cc.Invoke(ctx, JobService_RejectVacancyResponse_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobServiceClient) SendOffer(ctx context.Context, in *SendOfferRequest, opts ...grpc.CallOption) (*VacancyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VacancyResponse)
+	err := c.cc.Invoke(ctx, JobService_SendOffer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobServiceClient) WithdrawOffer(ctx context.Context, in *WithdrawOfferRequest, opts ...grpc.CallOption) (*VacancyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VacancyResponse)
+	err := c.cc.Invoke(ctx, JobService_WithdrawOffer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobServiceClient) AcceptOffer(ctx context.Context, in *AcceptOfferRequest, opts ...grpc.CallOption) (*VacancyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VacancyResponse)
+	err := c.cc.Invoke(ctx, JobService_AcceptOffer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobServiceClient) DeclineOffer(ctx context.Context, in *DeclineOfferRequest, opts ...grpc.CallOption) (*VacancyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VacancyResponse)
+	err := c.cc.Invoke(ctx, JobService_DeclineOffer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobServiceClient) MarkHired(ctx context.Context, in *MarkHiredRequest, opts ...grpc.CallOption) (*VacancyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VacancyResponse)
+	err := c.cc.Invoke(ctx, JobService_MarkHired_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *jobServiceClient) ListPublishedVacancies(ctx context.Context, in *ListPublishedVacanciesRequest, opts ...grpc.CallOption) (*ListPublishedVacanciesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListPublishedVacanciesResponse)
@@ -226,7 +314,11 @@ func (c *jobServiceClient) ListPublishedVacancies(ctx context.Context, in *ListP
 // anything not owned by the actor is reported as not found so existence is
 // never disclosed.
 //
-// State machine: draft -> published -> closed. Closed is terminal in S2.
+// State machine: draft -> published -> closed. Closing a vacancy is
+// transactional with its responses (S3): outstanding offers
+// (offer_sent/offer_accepted) are force-rejected with the system reason
+// "vacancy_closed" in the same transaction; active responses stay active as
+// history, withdrawn and terminal records are untouched.
 // `version` starts at 1 and is bumped by every successful mutation of the
 // vacancy itself; update calls must carry the version the caller saw, a
 // mismatch is reported as FailedPrecondition so the edge maps it to 409.
@@ -261,8 +353,26 @@ type JobServiceServer interface {
 	// response is allowed. Withdrawing a withdrawn response is reported as
 	// FailedPrecondition so the edge maps it to 409.
 	WithdrawVacancyResponse(context.Context, *WithdrawVacancyResponseRequest) (*VacancyResponse, error)
-	// Reads the actor's own active response to a vacancy.
+	// Reads the actor's own non-withdrawn response to a vacancy, in any
+	// pipeline status (active, rejected, offer_sent, offer_accepted,
+	// offer_declined, hired).
 	GetMyVacancyResponse(context.Context, *GetMyVacancyResponseRequest) (*VacancyResponse, error)
+	// Hiring pipeline of the response (S3, decision 1 of docs/s3-hiring.md).
+	// RejectVacancyResponse: author, active -> rejected; reason is optional and
+	// is visible to the candidate only. SendOffer: author, active ->
+	// offer_sent; at most one response per vacancy may hold an outstanding
+	// offer, a concurrent second offer is reported as AlreadyExists (409).
+	// WithdrawOffer: author, offer_sent -> active. AcceptOffer / DeclineOffer:
+	// candidate, offer_sent -> offer_accepted / offer_declined. MarkHired:
+	// author, offer_accepted -> hired (terminal; hiring needs no fake
+	// "acceptance of work"). Every transition is a CAS on the expected status:
+	// a lost race is reported as FailedPrecondition so the edge maps it to 409.
+	RejectVacancyResponse(context.Context, *RejectVacancyResponseRequest) (*VacancyResponse, error)
+	SendOffer(context.Context, *SendOfferRequest) (*VacancyResponse, error)
+	WithdrawOffer(context.Context, *WithdrawOfferRequest) (*VacancyResponse, error)
+	AcceptOffer(context.Context, *AcceptOfferRequest) (*VacancyResponse, error)
+	DeclineOffer(context.Context, *DeclineOfferRequest) (*VacancyResponse, error)
+	MarkHired(context.Context, *MarkHiredRequest) (*VacancyResponse, error)
 	// Public catalog: published vacancies only, newest first, keyset by
 	// (published_at, id). Anonymous callers get the same view as logged-in
 	// users; there is no actor in the request.
@@ -309,6 +419,24 @@ func (UnimplementedJobServiceServer) WithdrawVacancyResponse(context.Context, *W
 }
 func (UnimplementedJobServiceServer) GetMyVacancyResponse(context.Context, *GetMyVacancyResponseRequest) (*VacancyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMyVacancyResponse not implemented")
+}
+func (UnimplementedJobServiceServer) RejectVacancyResponse(context.Context, *RejectVacancyResponseRequest) (*VacancyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RejectVacancyResponse not implemented")
+}
+func (UnimplementedJobServiceServer) SendOffer(context.Context, *SendOfferRequest) (*VacancyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SendOffer not implemented")
+}
+func (UnimplementedJobServiceServer) WithdrawOffer(context.Context, *WithdrawOfferRequest) (*VacancyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method WithdrawOffer not implemented")
+}
+func (UnimplementedJobServiceServer) AcceptOffer(context.Context, *AcceptOfferRequest) (*VacancyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AcceptOffer not implemented")
+}
+func (UnimplementedJobServiceServer) DeclineOffer(context.Context, *DeclineOfferRequest) (*VacancyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeclineOffer not implemented")
+}
+func (UnimplementedJobServiceServer) MarkHired(context.Context, *MarkHiredRequest) (*VacancyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MarkHired not implemented")
 }
 func (UnimplementedJobServiceServer) ListPublishedVacancies(context.Context, *ListPublishedVacanciesRequest) (*ListPublishedVacanciesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListPublishedVacancies not implemented")
@@ -532,6 +660,114 @@ func _JobService_GetMyVacancyResponse_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _JobService_RejectVacancyResponse_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RejectVacancyResponseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobServiceServer).RejectVacancyResponse(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobService_RejectVacancyResponse_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobServiceServer).RejectVacancyResponse(ctx, req.(*RejectVacancyResponseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobService_SendOffer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SendOfferRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobServiceServer).SendOffer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobService_SendOffer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobServiceServer).SendOffer(ctx, req.(*SendOfferRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobService_WithdrawOffer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WithdrawOfferRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobServiceServer).WithdrawOffer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobService_WithdrawOffer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobServiceServer).WithdrawOffer(ctx, req.(*WithdrawOfferRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobService_AcceptOffer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AcceptOfferRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobServiceServer).AcceptOffer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobService_AcceptOffer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobServiceServer).AcceptOffer(ctx, req.(*AcceptOfferRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobService_DeclineOffer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeclineOfferRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobServiceServer).DeclineOffer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobService_DeclineOffer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobServiceServer).DeclineOffer(ctx, req.(*DeclineOfferRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobService_MarkHired_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MarkHiredRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobServiceServer).MarkHired(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobService_MarkHired_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobServiceServer).MarkHired(ctx, req.(*MarkHiredRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _JobService_ListPublishedVacancies_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListPublishedVacanciesRequest)
 	if err := dec(in); err != nil {
@@ -600,6 +836,30 @@ var JobService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetMyVacancyResponse",
 			Handler:    _JobService_GetMyVacancyResponse_Handler,
+		},
+		{
+			MethodName: "RejectVacancyResponse",
+			Handler:    _JobService_RejectVacancyResponse_Handler,
+		},
+		{
+			MethodName: "SendOffer",
+			Handler:    _JobService_SendOffer_Handler,
+		},
+		{
+			MethodName: "WithdrawOffer",
+			Handler:    _JobService_WithdrawOffer_Handler,
+		},
+		{
+			MethodName: "AcceptOffer",
+			Handler:    _JobService_AcceptOffer_Handler,
+		},
+		{
+			MethodName: "DeclineOffer",
+			Handler:    _JobService_DeclineOffer_Handler,
+		},
+		{
+			MethodName: "MarkHired",
+			Handler:    _JobService_MarkHired_Handler,
 		},
 		{
 			MethodName: "ListPublishedVacancies",

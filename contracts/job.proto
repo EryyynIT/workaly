@@ -13,7 +13,11 @@ import "google/protobuf/timestamp.proto";
 // anything not owned by the actor is reported as not found so existence is
 // never disclosed.
 //
-// State machine: draft -> published -> closed. Closed is terminal in S2.
+// State machine: draft -> published -> closed. Closing a vacancy is
+// transactional with its responses (S3): outstanding offers
+// (offer_sent/offer_accepted) are force-rejected with the system reason
+// "vacancy_closed" in the same transaction; active responses stay active as
+// history, withdrawn and terminal records are untouched.
 // `version` starts at 1 and is bumped by every successful mutation of the
 // vacancy itself; update calls must carry the version the caller saw, a
 // mismatch is reported as FailedPrecondition so the edge maps it to 409.
@@ -48,8 +52,26 @@ service JobService {
   // response is allowed. Withdrawing a withdrawn response is reported as
   // FailedPrecondition so the edge maps it to 409.
   rpc WithdrawVacancyResponse(WithdrawVacancyResponseRequest) returns (VacancyResponse);
-  // Reads the actor's own active response to a vacancy.
+  // Reads the actor's own non-withdrawn response to a vacancy, in any
+  // pipeline status (active, rejected, offer_sent, offer_accepted,
+  // offer_declined, hired).
   rpc GetMyVacancyResponse(GetMyVacancyResponseRequest) returns (VacancyResponse);
+  // Hiring pipeline of the response (S3, decision 1 of docs/s3-hiring.md).
+  // RejectVacancyResponse: author, active -> rejected; reason is optional and
+  // is visible to the candidate only. SendOffer: author, active ->
+  // offer_sent; at most one response per vacancy may hold an outstanding
+  // offer, a concurrent second offer is reported as AlreadyExists (409).
+  // WithdrawOffer: author, offer_sent -> active. AcceptOffer / DeclineOffer:
+  // candidate, offer_sent -> offer_accepted / offer_declined. MarkHired:
+  // author, offer_accepted -> hired (terminal; hiring needs no fake
+  // "acceptance of work"). Every transition is a CAS on the expected status:
+  // a lost race is reported as FailedPrecondition so the edge maps it to 409.
+  rpc RejectVacancyResponse(RejectVacancyResponseRequest) returns (VacancyResponse);
+  rpc SendOffer(SendOfferRequest) returns (VacancyResponse);
+  rpc WithdrawOffer(WithdrawOfferRequest) returns (VacancyResponse);
+  rpc AcceptOffer(AcceptOfferRequest) returns (VacancyResponse);
+  rpc DeclineOffer(DeclineOfferRequest) returns (VacancyResponse);
+  rpc MarkHired(MarkHiredRequest) returns (VacancyResponse);
   // Public catalog: published vacancies only, newest first, keyset by
   // (published_at, id). Anonymous callers get the same view as logged-in
   // users; there is no actor in the request.
@@ -64,9 +86,17 @@ message VacancyResponse {
   string candidate_user_id = 3;
   string cover_letter = 4;
   string contact = 5;  // "" when not given
-  string status = 6;   // active | withdrawn
+  string status = 6;   // active | withdrawn | rejected | offer_sent | offer_accepted | offer_declined | hired
   google.protobuf.Timestamp created_at = 7;
-  google.protobuf.Timestamp withdrawn_at = 8;  // unset while active
+  google.protobuf.Timestamp withdrawn_at = 8;  // unset until withdrawn
+  google.protobuf.Timestamp decided_at = 9;    // set on every terminal hiring decision
+  // reason holds the author's reject reason on rejected and the candidate's
+  // decline reason on offer_declined; "" otherwise. Visibility is decided by
+  // the HTTP edge: reject reason reaches the candidate only, decline reason
+  // reaches the author only. Closing a vacancy force-rejects outstanding
+  // offers with the system reason "vacancy_closed" (visible to the
+  // candidate).
+  string reason = 10;
 }
 
 message CreateVacancyResponseRequest {
@@ -92,6 +122,49 @@ message ListVacancyResponsesResponse {
 }
 
 message WithdrawVacancyResponseRequest {
+  string actor_user_id = 1;
+  string vacancy_id = 2;
+  string response_id = 3;
+}
+
+// Hiring pipeline requests. response_id identifies the response; the acting
+// side is fixed per RPC (author for Reject/SendOffer/WithdrawOffer/MarkHired,
+// candidate for AcceptOffer/DeclineOffer) and verified against the record.
+message RejectVacancyResponseRequest {
+  string actor_user_id = 1;
+  string vacancy_id = 2;
+  string response_id = 3;
+  // Optional, shown to the candidate; empty means no reason given.
+  string reason = 4;
+}
+
+message SendOfferRequest {
+  string actor_user_id = 1;
+  string vacancy_id = 2;
+  string response_id = 3;
+}
+
+message WithdrawOfferRequest {
+  string actor_user_id = 1;
+  string vacancy_id = 2;
+  string response_id = 3;
+}
+
+message AcceptOfferRequest {
+  string actor_user_id = 1;
+  string vacancy_id = 2;
+  string response_id = 3;
+}
+
+message DeclineOfferRequest {
+  string actor_user_id = 1;
+  string vacancy_id = 2;
+  string response_id = 3;
+  // Optional, shown to the author; empty means no reason given.
+  string reason = 4;
+}
+
+message MarkHiredRequest {
   string actor_user_id = 1;
   string vacancy_id = 2;
   string response_id = 3;

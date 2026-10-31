@@ -31,11 +31,19 @@ type VacancyResponse struct {
 	CandidateUserId string                 `protobuf:"bytes,3,opt,name=candidate_user_id,json=candidateUserId,proto3" json:"candidate_user_id,omitempty"`
 	CoverLetter     string                 `protobuf:"bytes,4,opt,name=cover_letter,json=coverLetter,proto3" json:"cover_letter,omitempty"`
 	Contact         string                 `protobuf:"bytes,5,opt,name=contact,proto3" json:"contact,omitempty"` // "" when not given
-	Status          string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`   // active | withdrawn
+	Status          string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`   // active | withdrawn | rejected | offer_sent | offer_accepted | offer_declined | hired
 	CreatedAt       *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	WithdrawnAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=withdrawn_at,json=withdrawnAt,proto3" json:"withdrawn_at,omitempty"` // unset while active
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	WithdrawnAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=withdrawn_at,json=withdrawnAt,proto3" json:"withdrawn_at,omitempty"` // unset until withdrawn
+	DecidedAt       *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=decided_at,json=decidedAt,proto3" json:"decided_at,omitempty"`       // set on every terminal hiring decision
+	// reason holds the author's reject reason on rejected and the candidate's
+	// decline reason on offer_declined; "" otherwise. Visibility is decided by
+	// the HTTP edge: reject reason reaches the candidate only, decline reason
+	// reaches the author only. Closing a vacancy force-rejects outstanding
+	// offers with the system reason "vacancy_closed" (visible to the
+	// candidate).
+	Reason        string `protobuf:"bytes,10,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *VacancyResponse) Reset() {
@@ -122,6 +130,20 @@ func (x *VacancyResponse) GetWithdrawnAt() *timestamppb.Timestamp {
 		return x.WithdrawnAt
 	}
 	return nil
+}
+
+func (x *VacancyResponse) GetDecidedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DecidedAt
+	}
+	return nil
+}
+
+func (x *VacancyResponse) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
 }
 
 type CreateVacancyResponseRequest struct {
@@ -375,6 +397,387 @@ func (x *WithdrawVacancyResponseRequest) GetResponseId() string {
 	return ""
 }
 
+// Hiring pipeline requests. response_id identifies the response; the acting
+// side is fixed per RPC (author for Reject/SendOffer/WithdrawOffer/MarkHired,
+// candidate for AcceptOffer/DeclineOffer) and verified against the record.
+type RejectVacancyResponseRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ActorUserId string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	VacancyId   string                 `protobuf:"bytes,2,opt,name=vacancy_id,json=vacancyId,proto3" json:"vacancy_id,omitempty"`
+	ResponseId  string                 `protobuf:"bytes,3,opt,name=response_id,json=responseId,proto3" json:"response_id,omitempty"`
+	// Optional, shown to the candidate; empty means no reason given.
+	Reason        string `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RejectVacancyResponseRequest) Reset() {
+	*x = RejectVacancyResponseRequest{}
+	mi := &file_job_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RejectVacancyResponseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RejectVacancyResponseRequest) ProtoMessage() {}
+
+func (x *RejectVacancyResponseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_job_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RejectVacancyResponseRequest.ProtoReflect.Descriptor instead.
+func (*RejectVacancyResponseRequest) Descriptor() ([]byte, []int) {
+	return file_job_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *RejectVacancyResponseRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *RejectVacancyResponseRequest) GetVacancyId() string {
+	if x != nil {
+		return x.VacancyId
+	}
+	return ""
+}
+
+func (x *RejectVacancyResponseRequest) GetResponseId() string {
+	if x != nil {
+		return x.ResponseId
+	}
+	return ""
+}
+
+func (x *RejectVacancyResponseRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type SendOfferRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorUserId   string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	VacancyId     string                 `protobuf:"bytes,2,opt,name=vacancy_id,json=vacancyId,proto3" json:"vacancy_id,omitempty"`
+	ResponseId    string                 `protobuf:"bytes,3,opt,name=response_id,json=responseId,proto3" json:"response_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SendOfferRequest) Reset() {
+	*x = SendOfferRequest{}
+	mi := &file_job_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SendOfferRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SendOfferRequest) ProtoMessage() {}
+
+func (x *SendOfferRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_job_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SendOfferRequest.ProtoReflect.Descriptor instead.
+func (*SendOfferRequest) Descriptor() ([]byte, []int) {
+	return file_job_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *SendOfferRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *SendOfferRequest) GetVacancyId() string {
+	if x != nil {
+		return x.VacancyId
+	}
+	return ""
+}
+
+func (x *SendOfferRequest) GetResponseId() string {
+	if x != nil {
+		return x.ResponseId
+	}
+	return ""
+}
+
+type WithdrawOfferRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorUserId   string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	VacancyId     string                 `protobuf:"bytes,2,opt,name=vacancy_id,json=vacancyId,proto3" json:"vacancy_id,omitempty"`
+	ResponseId    string                 `protobuf:"bytes,3,opt,name=response_id,json=responseId,proto3" json:"response_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WithdrawOfferRequest) Reset() {
+	*x = WithdrawOfferRequest{}
+	mi := &file_job_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WithdrawOfferRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WithdrawOfferRequest) ProtoMessage() {}
+
+func (x *WithdrawOfferRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_job_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WithdrawOfferRequest.ProtoReflect.Descriptor instead.
+func (*WithdrawOfferRequest) Descriptor() ([]byte, []int) {
+	return file_job_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *WithdrawOfferRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *WithdrawOfferRequest) GetVacancyId() string {
+	if x != nil {
+		return x.VacancyId
+	}
+	return ""
+}
+
+func (x *WithdrawOfferRequest) GetResponseId() string {
+	if x != nil {
+		return x.ResponseId
+	}
+	return ""
+}
+
+type AcceptOfferRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorUserId   string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	VacancyId     string                 `protobuf:"bytes,2,opt,name=vacancy_id,json=vacancyId,proto3" json:"vacancy_id,omitempty"`
+	ResponseId    string                 `protobuf:"bytes,3,opt,name=response_id,json=responseId,proto3" json:"response_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AcceptOfferRequest) Reset() {
+	*x = AcceptOfferRequest{}
+	mi := &file_job_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AcceptOfferRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AcceptOfferRequest) ProtoMessage() {}
+
+func (x *AcceptOfferRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_job_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AcceptOfferRequest.ProtoReflect.Descriptor instead.
+func (*AcceptOfferRequest) Descriptor() ([]byte, []int) {
+	return file_job_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *AcceptOfferRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *AcceptOfferRequest) GetVacancyId() string {
+	if x != nil {
+		return x.VacancyId
+	}
+	return ""
+}
+
+func (x *AcceptOfferRequest) GetResponseId() string {
+	if x != nil {
+		return x.ResponseId
+	}
+	return ""
+}
+
+type DeclineOfferRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ActorUserId string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	VacancyId   string                 `protobuf:"bytes,2,opt,name=vacancy_id,json=vacancyId,proto3" json:"vacancy_id,omitempty"`
+	ResponseId  string                 `protobuf:"bytes,3,opt,name=response_id,json=responseId,proto3" json:"response_id,omitempty"`
+	// Optional, shown to the author; empty means no reason given.
+	Reason        string `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeclineOfferRequest) Reset() {
+	*x = DeclineOfferRequest{}
+	mi := &file_job_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeclineOfferRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeclineOfferRequest) ProtoMessage() {}
+
+func (x *DeclineOfferRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_job_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeclineOfferRequest.ProtoReflect.Descriptor instead.
+func (*DeclineOfferRequest) Descriptor() ([]byte, []int) {
+	return file_job_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *DeclineOfferRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *DeclineOfferRequest) GetVacancyId() string {
+	if x != nil {
+		return x.VacancyId
+	}
+	return ""
+}
+
+func (x *DeclineOfferRequest) GetResponseId() string {
+	if x != nil {
+		return x.ResponseId
+	}
+	return ""
+}
+
+func (x *DeclineOfferRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type MarkHiredRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorUserId   string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	VacancyId     string                 `protobuf:"bytes,2,opt,name=vacancy_id,json=vacancyId,proto3" json:"vacancy_id,omitempty"`
+	ResponseId    string                 `protobuf:"bytes,3,opt,name=response_id,json=responseId,proto3" json:"response_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MarkHiredRequest) Reset() {
+	*x = MarkHiredRequest{}
+	mi := &file_job_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MarkHiredRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MarkHiredRequest) ProtoMessage() {}
+
+func (x *MarkHiredRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_job_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MarkHiredRequest.ProtoReflect.Descriptor instead.
+func (*MarkHiredRequest) Descriptor() ([]byte, []int) {
+	return file_job_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *MarkHiredRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *MarkHiredRequest) GetVacancyId() string {
+	if x != nil {
+		return x.VacancyId
+	}
+	return ""
+}
+
+func (x *MarkHiredRequest) GetResponseId() string {
+	if x != nil {
+		return x.ResponseId
+	}
+	return ""
+}
+
 type GetMyVacancyResponseRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ActorUserId   string                 `protobuf:"bytes,1,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
@@ -385,7 +788,7 @@ type GetMyVacancyResponseRequest struct {
 
 func (x *GetMyVacancyResponseRequest) Reset() {
 	*x = GetMyVacancyResponseRequest{}
-	mi := &file_job_proto_msgTypes[5]
+	mi := &file_job_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -397,7 +800,7 @@ func (x *GetMyVacancyResponseRequest) String() string {
 func (*GetMyVacancyResponseRequest) ProtoMessage() {}
 
 func (x *GetMyVacancyResponseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_job_proto_msgTypes[5]
+	mi := &file_job_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -410,7 +813,7 @@ func (x *GetMyVacancyResponseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMyVacancyResponseRequest.ProtoReflect.Descriptor instead.
 func (*GetMyVacancyResponseRequest) Descriptor() ([]byte, []int) {
-	return file_job_proto_rawDescGZIP(), []int{5}
+	return file_job_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetMyVacancyResponseRequest) GetActorUserId() string {
@@ -451,7 +854,7 @@ type Vacancy struct {
 
 func (x *Vacancy) Reset() {
 	*x = Vacancy{}
-	mi := &file_job_proto_msgTypes[6]
+	mi := &file_job_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -463,7 +866,7 @@ func (x *Vacancy) String() string {
 func (*Vacancy) ProtoMessage() {}
 
 func (x *Vacancy) ProtoReflect() protoreflect.Message {
-	mi := &file_job_proto_msgTypes[6]
+	mi := &file_job_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -476,7 +879,7 @@ func (x *Vacancy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Vacancy.ProtoReflect.Descriptor instead.
 func (*Vacancy) Descriptor() ([]byte, []int) {
-	return file_job_proto_rawDescGZIP(), []int{6}
+	return file_job_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *Vacancy) GetId() string {
@@ -608,7 +1011,7 @@ type CreateVacancyRequest struct {
 
 func (x *CreateVacancyRequest) Reset() {
 	*x = CreateVacancyRequest{}
-	mi := &file_job_proto_msgTypes[7]
+	mi := &file_job_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -620,7 +1023,7 @@ func (x *CreateVacancyRequest) String() string {
 func (*CreateVacancyRequest) ProtoMessage() {}
 
 func (x *CreateVacancyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_job_proto_msgTypes[7]
+	mi := &file_job_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -633,7 +1036,7 @@ func (x *CreateVacancyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateVacancyRequest.ProtoReflect.Descriptor instead.
 func (*CreateVacancyRequest) Descriptor() ([]byte, []int) {
-	return file_job_proto_rawDescGZIP(), []int{7}
+	return file_job_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CreateVacancyRequest) GetActorUserId() string {
@@ -710,7 +1113,7 @@ type GetVacancyRequest struct {
 
 func (x *GetVacancyRequest) Reset() {
 	*x = GetVacancyRequest{}
-	mi := &file_job_proto_msgTypes[8]
+	mi := &file_job_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -722,7 +1125,7 @@ func (x *GetVacancyRequest) String() string {
 func (*GetVacancyRequest) ProtoMessage() {}
 
 func (x *GetVacancyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_job_proto_msgTypes[8]
+	mi := &file_job_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -735,7 +1138,7 @@ func (x *GetVacancyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVacancyRequest.ProtoReflect.Descriptor instead.
 func (*GetVacancyRequest) Descriptor() ([]byte, []int) {
-	return file_job_proto_rawDescGZIP(), []int{8}
+	return file_job_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GetVacancyRequest) GetActorUserId() string {
@@ -772,7 +1175,7 @@ type UpdateVacancyRequest struct {
 
 func (x *UpdateVacancyRequest) Reset() {
 	*x = UpdateVacancyRequest{}
-	mi := &file_job_proto_msgTypes[9]
+	mi := &file_job_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -784,7 +1187,7 @@ func (x *UpdateVacancyRequest) String() string {
 func (*UpdateVacancyRequest) ProtoMessage() {}
 
 func (x *UpdateVacancyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_job_proto_msgTypes[9]
+	mi := &file_job_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -797,7 +1200,7 @@ func (x *UpdateVacancyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateVacancyRequest.ProtoReflect.Descriptor instead.
 func (*UpdateVacancyRequest) Descriptor() ([]byte, []int) {
-	return file_job_proto_rawDescGZIP(), []int{9}
+	return file_job_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UpdateVacancyRequest) GetActorUserId() string {
@@ -887,7 +1290,7 @@ type PublishVacancyRequest struct {
 
 func (x *PublishVacancyRequest) Reset() {
 	*x = PublishVacancyRequest{}
-	mi := &file_job_proto_msgTypes[10]
+	mi := &file_job_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -899,7 +1302,7 @@ func (x *PublishVacancyRequest) String() string {
 func (*PublishVacancyRequest) ProtoMessage() {}
 
 func (x *PublishVacancyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_job_proto_msgTypes[10]
+	mi := &file_job_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -912,7 +1315,7 @@ func (x *PublishVacancyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishVacancyRequest.ProtoReflect.Descriptor instead.
 func (*PublishVacancyRequest) Descriptor() ([]byte, []int) {
-	return file_job_proto_rawDescGZIP(), []int{10}
+	return file_job_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *PublishVacancyRequest) GetActorUserId() string {
@@ -939,7 +1342,7 @@ type CloseVacancyRequest struct {
 
 func (x *CloseVacancyRequest) Reset() {
 	*x = CloseVacancyRequest{}
-	mi := &file_job_proto_msgTypes[11]
+	mi := &file_job_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -951,7 +1354,7 @@ func (x *CloseVacancyRequest) String() string {
 func (*CloseVacancyRequest) ProtoMessage() {}
 
 func (x *CloseVacancyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_job_proto_msgTypes[11]
+	mi := &file_job_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -964,7 +1367,7 @@ func (x *CloseVacancyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseVacancyRequest.ProtoReflect.Descriptor instead.
 func (*CloseVacancyRequest) Descriptor() ([]byte, []int) {
-	return file_job_proto_rawDescGZIP(), []int{11}
+	return file_job_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *CloseVacancyRequest) GetActorUserId() string {
@@ -994,7 +1397,7 @@ type ListMyVacanciesRequest struct {
 
 func (x *ListMyVacanciesRequest) Reset() {
 	*x = ListMyVacanciesRequest{}
-	mi := &file_job_proto_msgTypes[12]
+	mi := &file_job_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1006,7 +1409,7 @@ func (x *ListMyVacanciesRequest) String() string {
 func (*ListMyVacanciesRequest) ProtoMessage() {}
 
 func (x *ListMyVacanciesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_job_proto_msgTypes[12]
+	mi := &file_job_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1019,7 +1422,7 @@ func (x *ListMyVacanciesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMyVacanciesRequest.ProtoReflect.Descriptor instead.
 func (*ListMyVacanciesRequest) Descriptor() ([]byte, []int) {
-	return file_job_proto_rawDescGZIP(), []int{12}
+	return file_job_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListMyVacanciesRequest) GetActorUserId() string {
@@ -1054,7 +1457,7 @@ type ListMyVacanciesResponse struct {
 
 func (x *ListMyVacanciesResponse) Reset() {
 	*x = ListMyVacanciesResponse{}
-	mi := &file_job_proto_msgTypes[13]
+	mi := &file_job_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1066,7 +1469,7 @@ func (x *ListMyVacanciesResponse) String() string {
 func (*ListMyVacanciesResponse) ProtoMessage() {}
 
 func (x *ListMyVacanciesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_job_proto_msgTypes[13]
+	mi := &file_job_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1079,7 +1482,7 @@ func (x *ListMyVacanciesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMyVacanciesResponse.ProtoReflect.Descriptor instead.
 func (*ListMyVacanciesResponse) Descriptor() ([]byte, []int) {
-	return file_job_proto_rawDescGZIP(), []int{13}
+	return file_job_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ListMyVacanciesResponse) GetVacancies() []*Vacancy {
@@ -1117,7 +1520,7 @@ type ListPublishedVacanciesRequest struct {
 
 func (x *ListPublishedVacanciesRequest) Reset() {
 	*x = ListPublishedVacanciesRequest{}
-	mi := &file_job_proto_msgTypes[14]
+	mi := &file_job_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1129,7 +1532,7 @@ func (x *ListPublishedVacanciesRequest) String() string {
 func (*ListPublishedVacanciesRequest) ProtoMessage() {}
 
 func (x *ListPublishedVacanciesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_job_proto_msgTypes[14]
+	mi := &file_job_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1142,7 +1545,7 @@ func (x *ListPublishedVacanciesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPublishedVacanciesRequest.ProtoReflect.Descriptor instead.
 func (*ListPublishedVacanciesRequest) Descriptor() ([]byte, []int) {
-	return file_job_proto_rawDescGZIP(), []int{14}
+	return file_job_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ListPublishedVacanciesRequest) GetPageToken() string {
@@ -1205,7 +1608,7 @@ type ListPublishedVacanciesResponse struct {
 
 func (x *ListPublishedVacanciesResponse) Reset() {
 	*x = ListPublishedVacanciesResponse{}
-	mi := &file_job_proto_msgTypes[15]
+	mi := &file_job_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1217,7 +1620,7 @@ func (x *ListPublishedVacanciesResponse) String() string {
 func (*ListPublishedVacanciesResponse) ProtoMessage() {}
 
 func (x *ListPublishedVacanciesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_job_proto_msgTypes[15]
+	mi := &file_job_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1230,7 +1633,7 @@ func (x *ListPublishedVacanciesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPublishedVacanciesResponse.ProtoReflect.Descriptor instead.
 func (*ListPublishedVacanciesResponse) Descriptor() ([]byte, []int) {
-	return file_job_proto_rawDescGZIP(), []int{15}
+	return file_job_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ListPublishedVacanciesResponse) GetVacancies() []*Vacancy {
@@ -1257,7 +1660,7 @@ type DeleteDraftRequest struct {
 
 func (x *DeleteDraftRequest) Reset() {
 	*x = DeleteDraftRequest{}
-	mi := &file_job_proto_msgTypes[16]
+	mi := &file_job_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1269,7 +1672,7 @@ func (x *DeleteDraftRequest) String() string {
 func (*DeleteDraftRequest) ProtoMessage() {}
 
 func (x *DeleteDraftRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_job_proto_msgTypes[16]
+	mi := &file_job_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1282,7 +1685,7 @@ func (x *DeleteDraftRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteDraftRequest.ProtoReflect.Descriptor instead.
 func (*DeleteDraftRequest) Descriptor() ([]byte, []int) {
-	return file_job_proto_rawDescGZIP(), []int{16}
+	return file_job_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *DeleteDraftRequest) GetActorUserId() string {
@@ -1303,7 +1706,7 @@ var File_job_proto protoreflect.FileDescriptor
 
 const file_job_proto_rawDesc = "" +
 	"\n" +
-	"\tjob.proto\x12\x03job\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbb\x02\n" +
+	"\tjob.proto\x12\x03job\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8e\x03\n" +
 	"\x0fVacancyResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -1314,7 +1717,11 @@ const file_job_proto_rawDesc = "" +
 	"\x06status\x18\x06 \x01(\tR\x06status\x129\n" +
 	"\n" +
 	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12=\n" +
-	"\fwithdrawn_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\vwithdrawnAt\"\x9e\x01\n" +
+	"\fwithdrawn_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\vwithdrawnAt\x129\n" +
+	"\n" +
+	"decided_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tdecidedAt\x12\x16\n" +
+	"\x06reason\x18\n" +
+	" \x01(\tR\x06reason\"\x9e\x01\n" +
 	"\x1cCreateVacancyResponseRequest\x12\"\n" +
 	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x1d\n" +
 	"\n" +
@@ -1332,6 +1739,44 @@ const file_job_proto_rawDesc = "" +
 	"\tresponses\x18\x01 \x03(\v2\x14.job.VacancyResponseR\tresponses\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x84\x01\n" +
 	"\x1eWithdrawVacancyResponseRequest\x12\"\n" +
+	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x1d\n" +
+	"\n" +
+	"vacancy_id\x18\x02 \x01(\tR\tvacancyId\x12\x1f\n" +
+	"\vresponse_id\x18\x03 \x01(\tR\n" +
+	"responseId\"\x9a\x01\n" +
+	"\x1cRejectVacancyResponseRequest\x12\"\n" +
+	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x1d\n" +
+	"\n" +
+	"vacancy_id\x18\x02 \x01(\tR\tvacancyId\x12\x1f\n" +
+	"\vresponse_id\x18\x03 \x01(\tR\n" +
+	"responseId\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"v\n" +
+	"\x10SendOfferRequest\x12\"\n" +
+	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x1d\n" +
+	"\n" +
+	"vacancy_id\x18\x02 \x01(\tR\tvacancyId\x12\x1f\n" +
+	"\vresponse_id\x18\x03 \x01(\tR\n" +
+	"responseId\"z\n" +
+	"\x14WithdrawOfferRequest\x12\"\n" +
+	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x1d\n" +
+	"\n" +
+	"vacancy_id\x18\x02 \x01(\tR\tvacancyId\x12\x1f\n" +
+	"\vresponse_id\x18\x03 \x01(\tR\n" +
+	"responseId\"x\n" +
+	"\x12AcceptOfferRequest\x12\"\n" +
+	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x1d\n" +
+	"\n" +
+	"vacancy_id\x18\x02 \x01(\tR\tvacancyId\x12\x1f\n" +
+	"\vresponse_id\x18\x03 \x01(\tR\n" +
+	"responseId\"\x91\x01\n" +
+	"\x13DeclineOfferRequest\x12\"\n" +
+	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x1d\n" +
+	"\n" +
+	"vacancy_id\x18\x02 \x01(\tR\tvacancyId\x12\x1f\n" +
+	"\vresponse_id\x18\x03 \x01(\tR\n" +
+	"responseId\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"v\n" +
+	"\x10MarkHiredRequest\x12\"\n" +
 	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x1d\n" +
 	"\n" +
 	"vacancy_id\x18\x02 \x01(\tR\tvacancyId\x12\x1f\n" +
@@ -1430,7 +1875,7 @@ const file_job_proto_rawDesc = "" +
 	"\x12DeleteDraftRequest\x12\"\n" +
 	"\ractor_user_id\x18\x01 \x01(\tR\vactorUserId\x12\x1d\n" +
 	"\n" +
-	"vacancy_id\x18\x02 \x01(\tR\tvacancyId2\xe4\x06\n" +
+	"vacancy_id\x18\x02 \x01(\tR\tvacancyId2\xea\t\n" +
 	"\n" +
 	"JobService\x128\n" +
 	"\rCreateVacancy\x12\x19.job.CreateVacancyRequest\x1a\f.job.Vacancy\x122\n" +
@@ -1444,7 +1889,13 @@ const file_job_proto_rawDesc = "" +
 	"\x15CreateVacancyResponse\x12!.job.CreateVacancyResponseRequest\x1a\x14.job.VacancyResponse\x12[\n" +
 	"\x14ListVacancyResponses\x12 .job.ListVacancyResponsesRequest\x1a!.job.ListVacancyResponsesResponse\x12T\n" +
 	"\x17WithdrawVacancyResponse\x12#.job.WithdrawVacancyResponseRequest\x1a\x14.job.VacancyResponse\x12N\n" +
-	"\x14GetMyVacancyResponse\x12 .job.GetMyVacancyResponseRequest\x1a\x14.job.VacancyResponse\x12a\n" +
+	"\x14GetMyVacancyResponse\x12 .job.GetMyVacancyResponseRequest\x1a\x14.job.VacancyResponse\x12P\n" +
+	"\x15RejectVacancyResponse\x12!.job.RejectVacancyResponseRequest\x1a\x14.job.VacancyResponse\x128\n" +
+	"\tSendOffer\x12\x15.job.SendOfferRequest\x1a\x14.job.VacancyResponse\x12@\n" +
+	"\rWithdrawOffer\x12\x19.job.WithdrawOfferRequest\x1a\x14.job.VacancyResponse\x12<\n" +
+	"\vAcceptOffer\x12\x17.job.AcceptOfferRequest\x1a\x14.job.VacancyResponse\x12>\n" +
+	"\fDeclineOffer\x12\x18.job.DeclineOfferRequest\x1a\x14.job.VacancyResponse\x128\n" +
+	"\tMarkHired\x12\x15.job.MarkHiredRequest\x1a\x14.job.VacancyResponse\x12a\n" +
 	"\x16ListPublishedVacancies\x12\".job.ListPublishedVacanciesRequest\x1a#.job.ListPublishedVacanciesResponseB3Z1github.com/EryyynIT/workaly/auth-service/pb/jobpbb\x06proto3"
 
 var (
@@ -1459,66 +1910,85 @@ func file_job_proto_rawDescGZIP() []byte {
 	return file_job_proto_rawDescData
 }
 
-var file_job_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_job_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_job_proto_goTypes = []any{
 	(*VacancyResponse)(nil),                // 0: job.VacancyResponse
 	(*CreateVacancyResponseRequest)(nil),   // 1: job.CreateVacancyResponseRequest
 	(*ListVacancyResponsesRequest)(nil),    // 2: job.ListVacancyResponsesRequest
 	(*ListVacancyResponsesResponse)(nil),   // 3: job.ListVacancyResponsesResponse
 	(*WithdrawVacancyResponseRequest)(nil), // 4: job.WithdrawVacancyResponseRequest
-	(*GetMyVacancyResponseRequest)(nil),    // 5: job.GetMyVacancyResponseRequest
-	(*Vacancy)(nil),                        // 6: job.Vacancy
-	(*CreateVacancyRequest)(nil),           // 7: job.CreateVacancyRequest
-	(*GetVacancyRequest)(nil),              // 8: job.GetVacancyRequest
-	(*UpdateVacancyRequest)(nil),           // 9: job.UpdateVacancyRequest
-	(*PublishVacancyRequest)(nil),          // 10: job.PublishVacancyRequest
-	(*CloseVacancyRequest)(nil),            // 11: job.CloseVacancyRequest
-	(*ListMyVacanciesRequest)(nil),         // 12: job.ListMyVacanciesRequest
-	(*ListMyVacanciesResponse)(nil),        // 13: job.ListMyVacanciesResponse
-	(*ListPublishedVacanciesRequest)(nil),  // 14: job.ListPublishedVacanciesRequest
-	(*ListPublishedVacanciesResponse)(nil), // 15: job.ListPublishedVacanciesResponse
-	(*DeleteDraftRequest)(nil),             // 16: job.DeleteDraftRequest
-	(*timestamppb.Timestamp)(nil),          // 17: google.protobuf.Timestamp
+	(*RejectVacancyResponseRequest)(nil),   // 5: job.RejectVacancyResponseRequest
+	(*SendOfferRequest)(nil),               // 6: job.SendOfferRequest
+	(*WithdrawOfferRequest)(nil),           // 7: job.WithdrawOfferRequest
+	(*AcceptOfferRequest)(nil),             // 8: job.AcceptOfferRequest
+	(*DeclineOfferRequest)(nil),            // 9: job.DeclineOfferRequest
+	(*MarkHiredRequest)(nil),               // 10: job.MarkHiredRequest
+	(*GetMyVacancyResponseRequest)(nil),    // 11: job.GetMyVacancyResponseRequest
+	(*Vacancy)(nil),                        // 12: job.Vacancy
+	(*CreateVacancyRequest)(nil),           // 13: job.CreateVacancyRequest
+	(*GetVacancyRequest)(nil),              // 14: job.GetVacancyRequest
+	(*UpdateVacancyRequest)(nil),           // 15: job.UpdateVacancyRequest
+	(*PublishVacancyRequest)(nil),          // 16: job.PublishVacancyRequest
+	(*CloseVacancyRequest)(nil),            // 17: job.CloseVacancyRequest
+	(*ListMyVacanciesRequest)(nil),         // 18: job.ListMyVacanciesRequest
+	(*ListMyVacanciesResponse)(nil),        // 19: job.ListMyVacanciesResponse
+	(*ListPublishedVacanciesRequest)(nil),  // 20: job.ListPublishedVacanciesRequest
+	(*ListPublishedVacanciesResponse)(nil), // 21: job.ListPublishedVacanciesResponse
+	(*DeleteDraftRequest)(nil),             // 22: job.DeleteDraftRequest
+	(*timestamppb.Timestamp)(nil),          // 23: google.protobuf.Timestamp
 }
 var file_job_proto_depIdxs = []int32{
-	17, // 0: job.VacancyResponse.created_at:type_name -> google.protobuf.Timestamp
-	17, // 1: job.VacancyResponse.withdrawn_at:type_name -> google.protobuf.Timestamp
-	0,  // 2: job.ListVacancyResponsesResponse.responses:type_name -> job.VacancyResponse
-	17, // 3: job.Vacancy.created_at:type_name -> google.protobuf.Timestamp
-	17, // 4: job.Vacancy.updated_at:type_name -> google.protobuf.Timestamp
-	17, // 5: job.Vacancy.published_at:type_name -> google.protobuf.Timestamp
-	17, // 6: job.Vacancy.closed_at:type_name -> google.protobuf.Timestamp
-	6,  // 7: job.ListMyVacanciesResponse.vacancies:type_name -> job.Vacancy
-	6,  // 8: job.ListPublishedVacanciesResponse.vacancies:type_name -> job.Vacancy
-	7,  // 9: job.JobService.CreateVacancy:input_type -> job.CreateVacancyRequest
-	8,  // 10: job.JobService.GetVacancy:input_type -> job.GetVacancyRequest
-	9,  // 11: job.JobService.UpdateVacancy:input_type -> job.UpdateVacancyRequest
-	10, // 12: job.JobService.PublishVacancy:input_type -> job.PublishVacancyRequest
-	11, // 13: job.JobService.CloseVacancy:input_type -> job.CloseVacancyRequest
-	12, // 14: job.JobService.ListMyVacancies:input_type -> job.ListMyVacanciesRequest
-	16, // 15: job.JobService.DeleteDraft:input_type -> job.DeleteDraftRequest
-	1,  // 16: job.JobService.CreateVacancyResponse:input_type -> job.CreateVacancyResponseRequest
-	2,  // 17: job.JobService.ListVacancyResponses:input_type -> job.ListVacancyResponsesRequest
-	4,  // 18: job.JobService.WithdrawVacancyResponse:input_type -> job.WithdrawVacancyResponseRequest
-	5,  // 19: job.JobService.GetMyVacancyResponse:input_type -> job.GetMyVacancyResponseRequest
-	14, // 20: job.JobService.ListPublishedVacancies:input_type -> job.ListPublishedVacanciesRequest
-	6,  // 21: job.JobService.CreateVacancy:output_type -> job.Vacancy
-	6,  // 22: job.JobService.GetVacancy:output_type -> job.Vacancy
-	6,  // 23: job.JobService.UpdateVacancy:output_type -> job.Vacancy
-	6,  // 24: job.JobService.PublishVacancy:output_type -> job.Vacancy
-	6,  // 25: job.JobService.CloseVacancy:output_type -> job.Vacancy
-	13, // 26: job.JobService.ListMyVacancies:output_type -> job.ListMyVacanciesResponse
-	6,  // 27: job.JobService.DeleteDraft:output_type -> job.Vacancy
-	0,  // 28: job.JobService.CreateVacancyResponse:output_type -> job.VacancyResponse
-	3,  // 29: job.JobService.ListVacancyResponses:output_type -> job.ListVacancyResponsesResponse
-	0,  // 30: job.JobService.WithdrawVacancyResponse:output_type -> job.VacancyResponse
-	0,  // 31: job.JobService.GetMyVacancyResponse:output_type -> job.VacancyResponse
-	15, // 32: job.JobService.ListPublishedVacancies:output_type -> job.ListPublishedVacanciesResponse
-	21, // [21:33] is the sub-list for method output_type
-	9,  // [9:21] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	23, // 0: job.VacancyResponse.created_at:type_name -> google.protobuf.Timestamp
+	23, // 1: job.VacancyResponse.withdrawn_at:type_name -> google.protobuf.Timestamp
+	23, // 2: job.VacancyResponse.decided_at:type_name -> google.protobuf.Timestamp
+	0,  // 3: job.ListVacancyResponsesResponse.responses:type_name -> job.VacancyResponse
+	23, // 4: job.Vacancy.created_at:type_name -> google.protobuf.Timestamp
+	23, // 5: job.Vacancy.updated_at:type_name -> google.protobuf.Timestamp
+	23, // 6: job.Vacancy.published_at:type_name -> google.protobuf.Timestamp
+	23, // 7: job.Vacancy.closed_at:type_name -> google.protobuf.Timestamp
+	12, // 8: job.ListMyVacanciesResponse.vacancies:type_name -> job.Vacancy
+	12, // 9: job.ListPublishedVacanciesResponse.vacancies:type_name -> job.Vacancy
+	13, // 10: job.JobService.CreateVacancy:input_type -> job.CreateVacancyRequest
+	14, // 11: job.JobService.GetVacancy:input_type -> job.GetVacancyRequest
+	15, // 12: job.JobService.UpdateVacancy:input_type -> job.UpdateVacancyRequest
+	16, // 13: job.JobService.PublishVacancy:input_type -> job.PublishVacancyRequest
+	17, // 14: job.JobService.CloseVacancy:input_type -> job.CloseVacancyRequest
+	18, // 15: job.JobService.ListMyVacancies:input_type -> job.ListMyVacanciesRequest
+	22, // 16: job.JobService.DeleteDraft:input_type -> job.DeleteDraftRequest
+	1,  // 17: job.JobService.CreateVacancyResponse:input_type -> job.CreateVacancyResponseRequest
+	2,  // 18: job.JobService.ListVacancyResponses:input_type -> job.ListVacancyResponsesRequest
+	4,  // 19: job.JobService.WithdrawVacancyResponse:input_type -> job.WithdrawVacancyResponseRequest
+	11, // 20: job.JobService.GetMyVacancyResponse:input_type -> job.GetMyVacancyResponseRequest
+	5,  // 21: job.JobService.RejectVacancyResponse:input_type -> job.RejectVacancyResponseRequest
+	6,  // 22: job.JobService.SendOffer:input_type -> job.SendOfferRequest
+	7,  // 23: job.JobService.WithdrawOffer:input_type -> job.WithdrawOfferRequest
+	8,  // 24: job.JobService.AcceptOffer:input_type -> job.AcceptOfferRequest
+	9,  // 25: job.JobService.DeclineOffer:input_type -> job.DeclineOfferRequest
+	10, // 26: job.JobService.MarkHired:input_type -> job.MarkHiredRequest
+	20, // 27: job.JobService.ListPublishedVacancies:input_type -> job.ListPublishedVacanciesRequest
+	12, // 28: job.JobService.CreateVacancy:output_type -> job.Vacancy
+	12, // 29: job.JobService.GetVacancy:output_type -> job.Vacancy
+	12, // 30: job.JobService.UpdateVacancy:output_type -> job.Vacancy
+	12, // 31: job.JobService.PublishVacancy:output_type -> job.Vacancy
+	12, // 32: job.JobService.CloseVacancy:output_type -> job.Vacancy
+	19, // 33: job.JobService.ListMyVacancies:output_type -> job.ListMyVacanciesResponse
+	12, // 34: job.JobService.DeleteDraft:output_type -> job.Vacancy
+	0,  // 35: job.JobService.CreateVacancyResponse:output_type -> job.VacancyResponse
+	3,  // 36: job.JobService.ListVacancyResponses:output_type -> job.ListVacancyResponsesResponse
+	0,  // 37: job.JobService.WithdrawVacancyResponse:output_type -> job.VacancyResponse
+	0,  // 38: job.JobService.GetMyVacancyResponse:output_type -> job.VacancyResponse
+	0,  // 39: job.JobService.RejectVacancyResponse:output_type -> job.VacancyResponse
+	0,  // 40: job.JobService.SendOffer:output_type -> job.VacancyResponse
+	0,  // 41: job.JobService.WithdrawOffer:output_type -> job.VacancyResponse
+	0,  // 42: job.JobService.AcceptOffer:output_type -> job.VacancyResponse
+	0,  // 43: job.JobService.DeclineOffer:output_type -> job.VacancyResponse
+	0,  // 44: job.JobService.MarkHired:output_type -> job.VacancyResponse
+	21, // 45: job.JobService.ListPublishedVacancies:output_type -> job.ListPublishedVacanciesResponse
+	28, // [28:46] is the sub-list for method output_type
+	10, // [10:28] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_job_proto_init() }
@@ -1532,7 +2002,7 @@ func file_job_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_job_proto_rawDesc), len(file_job_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
